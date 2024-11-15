@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hausaufgaben-Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Willkommen im Hausaufgaben-Tool</h1>
+        <h2>Wer sind Sie?</h2>
+        <div id="user-type-selection">
+            <button onclick="showTeacherOptions()">Ich bin Lehrer</button>
+            <button onclick="showStudentOptions()">Ich bin Schüler</button>
+        </div>
+        
+        <div id="teacher-options" style="display:none;">
+            <h3>Lehrer</h3>
+            <button onclick="showTeacherLogin()">Anmelden</button>
+            <button onclick="showTeacherRegister()">Registrieren</button>
+            <button class="back-button" onclick="zurueck()">Zurück</button>
+        </div>
+        
+        <div id="student-options" style="display:none;">
+            <h3>Schüler</h3>
+            <button onclick="showStudentLogin()">Anmelden</button>
+            <button onclick="showStudentRegister()">Registrieren</button>
+            <button class="back-button" onclick="zurueck()">Zurück</button>
+        </div>
+        
+        <div id="teacher-login" style="display:none;">
+            <h3>Lehrer Login</h3>
+            <form action="/login_teacher" method="post">
+                <label for="teacher_email">E-Mail:</label>
+                <input type="email" id="teacher_email" name="email" required>
+                <label for="teacher_password">Passwort:</label>
+                <input type="password" id="teacher_password" name="password" required>
+                <button type="submit" class="submit-button">Anmelden</button>
+            </form>
+            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+        </div>
+        
+        <div id="teacher-register" style="display:none;">
+            <h3>Lehrer Registrierung</h3>
+            <form action="/register_teacher" method="post">
+                <label for="teacher_name">Name:</label>
+                <input type="text" id="teacher_name" name="name" required>
+                <label for="teacher_email">E-Mail:</label>
+                <input type="email" id="teacher_email" name="email" required>
+                <label for="teacher_password">Passwort:</label>
+                <input type="password" id="teacher_password" name="password" required>
+                <button type="submit" class="submit-button">Registrieren</button>
+            </form>
+            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+        </div>
+        
+        <div id="student-login" style="display:none;">
+            <h3>Schüler Login</h3>
+            <form action="/login_student" method="post">
+                <label for="student_email">E-Mail:</label>
+                <input type="email" id="student_email" name="email" required>
+                <label for="student_password">Passwort:</label>
+                <input type="password" id="student_password" name="password" required>
+                <button type="submit" class="submit-button">Anmelden</button>
+            </form>
+            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+        </div>
+        
+        <div id="student-register" style="display:none;">
+            <h3>Schüler Registrierung</h3>
+            <form action="/register_student" method="post">
+                <label for="student_name">Name:</label>
+                <input type="text" id="student_name" name="name" required>
+                <label for="student_email">E-Mail:</label>
+                <input type="email" id="student_email" name="email" required>
+                <label for="student_password">Passwort:</label>
+                <input type="password" id="student_password" name="password" required>
+                <button type="submit" class="submit-button">Registrieren</button>
+            </form>
+            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+        </div>
+
+    </div>
+    <script>
+        let currentRole = ''; // Variable zum Festhalten, ob Lehrer oder Schüler
+    
+        function showTeacherOptions() {
+            currentRole = 'teacher';
+            document.getElementById('teacher-options').style.display = 'block';
+            document.getElementById('student-options').style.display = 'none';
+            document.getElementById('user-type-selection').style.display = 'none';
+            hideAllForms();
+        }
+    
+        function showStudentOptions() {
+            currentRole = 'student';
+            document.getElementById('student-options').style.display = 'block';
+            document.getElementById('teacher-options').style.display = 'none';
+            document.getElementById('user-type-selection').style.display = 'none';
+            hideAllForms();
+        }
+    
+        function zurueck() {
+            // Wird genutzt um wieder zur Startauswahl-Option zurückzukehren
+            document.getElementById('user-type-selection').style.display = 'block';
+            document.getElementById('teacher-options').style.display = 'none';
+            document.getElementById('student-options').style.display = 'none';
+            hideAllForms();
+            currentRole = ''; // Zurücksetzen der Rolle
+        }
+    
+        function zurueckZuOptions() {
+            hideAllForms();
+            if (currentRole === 'teacher') {
+                document.getElementById('teacher-options').style.display = 'block';
+            } else if (currentRole === 'student') {
+                document.getElementById('student-options').style.display = 'block';
+            }
+        }
+    
+        function showTeacherLogin() {
+            hideAllOptions();
+            document.getElementById('teacher-login').style.display = 'block';
+        }
+    
+        function showTeacherRegister() {
+            hideAllOptions();
+            document.getElementById('teacher-register').style.display = 'block';
+        }
+    
+        function showStudentLogin() {
+            hideAllOptions();
+            document.getElementById('student-login').style.display = 'block';
+        }
+    
+        function showStudentRegister() {
+            hideAllOptions();
+            document.getElementById('student-register').style.display = 'block';
+        }
+    
+        function hideAllForms() {
+            document.getElementById('teacher-login').style.display = 'none';
+            document.getElementById('teacher-register').style.display = 'none';
+            document.getElementById('student-login').style.display = 'none';
+            document.getElementById('student-register').style.display = 'none';
+        }
+    
+        function hideAllOptions() {
+            document.getElementById('teacher-options').style.display = 'none';
+            document.getElementById('student-options').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
