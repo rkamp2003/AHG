@@ -1,0 +1,204 @@
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #f4f4f9;
+    color: #333;
+    margin: 0;
+    padding: 20px;
+    line-height: 1.6;
+}
+
+h1, h2, h3 {
+    color: #4a4a8e;
+    text-align: center;
+}
+
+.button, button, .back-button {
+    background-color: #4a4a8e;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    margin: 10px 0;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    text-decoration: none;
+    display: block;
+    text-align: center;
+    width: 150px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.button:hover, button:hover, .back-button:hover {
+    background-color: #363657;
+}
+
+.top-buttons {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+ul.class-list, ul.student-list {
+    list-style-type: none;
+    padding: 0;
+    max-width: 600px;
+    margin: 20px auto;
+}
+
+ul.class-list li, ul.student-list li {
+    background-color: #f9f9f9;
+    margin: 10px 0;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s;
+}
+
+ul.class-list li:hover, ul.student-list li:hover {
+    transform: translateY(-3px);
+    background-color: #eef2f7;
+}
+
+form {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    margin: 20px auto;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    color: #666;
+}
+
+input[type="text"], input[type="email"], input[type="password"], input[type="number"] {
+    width: calc(100% - 20px);
+    padding: 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    text-align: center;
+}
+
+a {
+    text-decoration: none;
+    color: #4a4a8e;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.autocomplete-container {
+    position: relative;
+    display: flex; /* Verwenden Sie flexbox für bessere Kontrolle */
+    align-items: center; /* Zentriert sowohl Button als auch Input vertikal */
+    justify-content: center;
+}
+
+input[type="text"] {
+    width: 300px;
+    padding: 10px;
+    margin: 0;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    height: 40px; /* Einheitliche Höhe */
+    box-sizing: border-box;
+}
+
+button[type="submit"] {
+    background-color: #4a4a8e;
+    color: white;
+    border: none;
+    height: 40px; /* Einheitliche Höhe mit dem Eingabefeld */
+    margin: 0;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin-left: 10px;
+}
+
+button[type="submit"]:hover {
+    background-color: #363657;
+}
+
+.autocomplete-suggestions {
+    width: 300px; /* Entspricht der Breite des Eingabefelds */
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid #ddd;
+    max-height: 150px;
+    overflow-y: auto;
+    background-color: #fff;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+    position: absolute;
+    top: 100%; /* Direkt unter dem Eingabefeld */
+    left: 0;
+    z-index: 1000;
+}
+
+.autocomplete-suggestion {
+    padding: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.autocomplete-suggestion:last-child {
+    border-bottom: none;
+}
+
+.autocomplete-suggestion:hover {
+    background-color: #f0f0f0;
+}
+
+.info-list {
+    list-style-type: none;
+    padding: 0;
+    max-width: 600px;
+    margin: 0 auto; /* Zentriert den Container horizontal */
+    text-align: left; /* Setzt Ausrichtung im Textbereich */
+}
+
+.info-list li {
+    background-color: #f9f9f9;
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+
+form {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    margin: 20px auto; /* Zentriert das Formular horizontal */
+    text-align: center; /* Zentriert die Inhalte innerhalb des Formulars */
+}
+
+.submit-button, button[type="submit"] {
+    background-color: #4a4a8e;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    display: inline-block;
+    text-align: center;
+    margin: 10px 0;
+}
+
+.submit-button:hover, button[type="submit"]:hover {
+    background-color: #363657;
+}

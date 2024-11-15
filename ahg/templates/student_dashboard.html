@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Schüler-Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="top-buttons">
+        <a href="/" class="button">Abmelden</a>
+    </div>
+
+    <h1>Willkommen, {{ student['name'] }}</h1>
+    <h2>Ihre Kurse:</h2>
+    <ul class="class-list">
+        {% for class in joined_classes %}
+            <li>
+                <a href="/class_details_student/{{ class['id'] }}/{{ student['id'] }}">
+                    {{ class['class_name'] }} - Fach: {{ class['subject'] }} (Lehrer: {{ class['teacher_name'] }})
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <h3>Einer Klasse beitreten</h3>
+    <form action="/join_class" method="post" onsubmit="return checkSelection()" style="text-align: center;">
+        <input type="hidden" name="student_id" value="{{ student['id'] }}">
+        <label for="class_search">Klasse suchen:</label>
+        <div class="autocomplete-container" style="display: inline-flex; align-items: center;">
+            <input type="text" id="class_search" oninput="showSuggestions(this.value)" autocomplete="off" placeholder="Klasse eingeben...">
+            <button type="submit" style="margin-left: 10px;">Beitreten</button>
+            <ul class="autocomplete-suggestions" id="suggestions-container"></ul>
+        </div>
+        <input type="hidden" id="class_id" name="class_id" required>
+    </form>
+
+    <script>
+        // Verwenden Sie |tojson, indem Sie sicherstellen, dass all_classes korrekt in JSON umgewandelt wird
+        const allClasses = {{ all_classes|tojson }};
+        const suggestionsContainer = document.getElementById('suggestions-container');
+    
+        function showSuggestions(query) {
+            suggestionsContainer.innerHTML = '';
+            if (query.trim().length === 0) return;
+    
+            const matchingClasses = allClasses.filter(c => c.class_name.toLowerCase().includes(query.toLowerCase()) || c.id.toString().includes(query));
+            matchingClasses.forEach(classItem => {
+                const suggestionItem = document.createElement('li');
+                suggestionItem.classList.add('autocomplete-suggestion');
+                suggestionItem.textContent = `${classItem.class_name} (${classItem.id})`;
+                suggestionItem.onclick = () => selectClass(classItem.id, classItem.class_name);
+                suggestionsContainer.appendChild(suggestionItem);
+            });
+        }
+    
+        function selectClass(id, name) {
+            document.getElementById('class_search').value = name;
+            document.getElementById('class_id').value = id;
+            suggestionsContainer.innerHTML = '';
+        }
+    
+        function checkSelection() {
+            const classId = document.getElementById('class_id').value;
+            return classId !== '';
+        }
+    </script>
+</body>
+</html>

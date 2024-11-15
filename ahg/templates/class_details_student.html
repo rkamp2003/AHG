@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Klassendetails (Schüleransicht)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="top-buttons">
+        <a href="/student_dashboard/{{ student_id }}" class="button">Dashboard</a>
+    </div>
+    
+    <h1>{{ class_info['class_name'] }}</h1>
+    <h2>Fach: {{ class_info['subject'] }}</h2>
+    <h3>Lehrer: {{ class_info['teacher_name'] }}</h3>
+
+    <h3>Ihre Informationen:</h3>
+    <ul class="info-list">
+        <li>Name: {{ student['name'] }}</li>
+        <li>Skill Level: {{ student['skill_level'] }}</li>
+    </ul>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Lehrer-Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="top-buttons">
+        <a href="/" class="button">Abmelden</a>
+    </div>
+    
+    <h1>Willkommen, {{ teacher['name'] }}</h1>
+    <h2>Ihre Klassen:</h2>
+    <ul class="class-list">
+        {% for class in classes %}
+            <li>
+                <a href="/class_details_teacher/{{ class['id'] }}/{{ teacher['id'] }}">
+                    {{ class['class_name'] }} - Fach: {{ class['subject'] }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <div id="teacher-options" style="text-align: center;">
+        <button onclick="showCreateClass()">Klasse erstellen</button>
+    </div>
+    
+    <div id="create-class" style="display:none; text-align: center;">
+        <h3>Neuen Kurs erstellen</h3>
+        <form action="/create_class" method="post" style="max-width: 400px; margin: auto;">
+            <input type="hidden" name="teacher_id" value="{{ teacher['id'] }}">
+            <label for="class_name">Kursname:</label>
+            <input type="text" id="class_name" name="class_name" required>
+
+            <label for="subject">Fach:</label>
+            <input type="text" id="subject" name="subject" required>
+
+            <button type="submit">Klasse erstellen</button>
+        </form>
+    </div>
+
+    <script>
+        function showCreateClass() {
+            document.getElementById('create-class').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
