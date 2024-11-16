@@ -7,7 +7,7 @@
 </head>
 <body>
     <div class="top-buttons">
-        <a href="/student_dashboard/{{ student_id }}" class="button">Dashboard</a>
+        <a href="/student_dashboard" class="button">Dashboard</a>
     </div>
     
     <h1>{{ class_info['class_name'] }}</h1>
@@ -19,5 +19,12 @@
         <li>Name: {{ student['name'] }}</li>
         <li>Skill Level: {{ student['skill_level'] }}</li>
     </ul>
+
+    <!-- Button zum Verlassen der Klasse -->
+    <form action="/leave_class" method="post">
+        <input type="hidden" name="student_id" value="{{ student_id }}">
+        <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
+        <button type="submit" class="submit-button danger">Kurs verlassen</button>
+    </form>
 </body>
 </html>

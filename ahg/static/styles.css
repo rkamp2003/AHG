@@ -202,3 +202,12 @@ form {
 .submit-button:hover, button[type="submit"]:hover {
     background-color: #363657;
 }
+
+.submit-button.danger {
+    background-color: #e74c3c;
+    color: white;
+}
+
+.submit-button.danger:hover {
+    background-color: #c0392b;
+}

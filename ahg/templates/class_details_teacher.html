@@ -7,7 +7,7 @@
 </head>
 <body>
     <div class="top-buttons">
-        <a href="/teacher_dashboard/{{ teacher_id }}" class="button">Dashboard</a>
+        <a href="/teacher_dashboard" class="button">Dashboard</a>
     </div>
     
     <h1>{{ class_info['class_name'] }}</h1>
@@ -20,5 +20,12 @@
             <li>{{ student['name'] }} (Skill Level: {{ student['skill_level'] }})</li>
         {% endfor %}
     </ul>
+
+    <form action="/delete_class" method="post" onsubmit="return confirm('Möchten Sie diesen Kurs wirklich löschen? Alle zugehörigen Daten werden entfernt.')">
+        <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
+        <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
+        <button type="submit" class="submit-button danger">Kurs löschen</button>
+    </form>
+    
 </body>
 </html>
