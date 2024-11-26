@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Klassendetails (Schüleransicht)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="top-buttons" style="display: flex; justify-content: space-between;">
+        <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Zurück zur Klasse</a>
+    </div>
+    
+    <h1>Hausaufgabe: {{ homework['description'] }}</h1>
+    <h3>Erstellt am: {{ homework['date_created'] }}</h3>
+
+    <form id="homework-form" action="/submit_homework" method="post">
+        <input type="hidden" name="student_id" value="{{ student_id }}">
+        <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
+        <input type="hidden" name="class_id" value="{{ homework['class_id'] }}">
+
+        <ol>
+            {% for question in questions %}
+                <li>
+                    <p>{{ question['question'] }}</p>
+                    {% if question['question_type'] == 'multiple_choice' %}
+                        {% for option in question['options'] %}
+                            <label>
+                                <input type="radio" name="answer_{{ loop.index }}" value="{{ option }}" onclick="toggleRadio(this)">
+                                {{ option }}
+                            </label>
+                        {% endfor %}
+                    {% elif question['question_type'] == 'text' %}
+                        <input type="text" name="answer_{{ loop.index }}" required>
+                    {% elif question['question_type'] == 'number' %}
+                        <input type="number" name="answer_{{ loop.index }}" required>
+                    {% endif %}
+                    <span id="result_{{ loop.index }}"></span>
+                </li>
+            {% endfor %}
+        </ol>
+
+        <button type="button" onclick="checkAnswers()">Überprüfen</button>
+        <button type="submit" id="submit-button" class="hidden">Abschicken</button>
+    </form>
+
+    <script>
+        const correctAnswers = {{ correct_answers|tojson() }};
+        const explanations = {{ explanations|tojson() }};
+        const lastChecked = {};
+    
+        function checkAnswers() {
+            const elements = document.getElementById('homework-form').elements;
+    
+            for (let el of elements) {
+                if (el.name.startsWith('answer_')) {
+                    const index = el.name.split('_')[1];
+                    const userAnswer = (el.type === 'radio' && !el.checked) ? null : el.value.trim();
+                    const correctAnswer = (correctAnswers[index] || "").trim();
+                    const resultSpan = document.getElementById('result_' + index);
+    
+                    let isCorrect = userAnswer === correctAnswer;
+    
+                    if (isCorrect) {
+                        resultSpan.innerText = '✔️';
+                        resultSpan.classList.add('correct');
+                        resultSpan.classList.remove('incorrect');
+                    } else {
+                        resultSpan.innerText = `❌ Richtige Antwort: ${correctAnswers[index]}. Erklärung: ${explanations[index]}`;
+                        resultSpan.classList.add('incorrect');
+                        resultSpan.classList.remove('correct');
+                    }
+                }
+            }
+    
+            document.getElementById('submit-button').classList.remove('hidden');
+        }
+    
+        function toggleRadio(radio) {
+            const name = radio.name;
+            if (lastChecked[name] === radio) {
+                radio.checked = false;
+                lastChecked[name] = null;
+            } else {
+                lastChecked[name] = radio;
+            }
+        }
+    </script>
+</body>
+</html>

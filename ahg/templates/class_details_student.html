@@ -20,6 +20,17 @@
         <li>Skill Level: {{ student['skill_level'] }}</li>
     </ul>
 
+    <h3>Hausaufgaben</h3>
+    <ul>
+        {% for homework in homework_list %}
+            <li>
+                <a href="/homework/{{ homework['id'] }}/{{ student_id }}">Hausaufgabe vom {{ homework['date_created'] }}</a>
+            </li>
+        {% endfor %}
+    </ul>
+
+
+
     <!-- Button zum Verlassen der Klasse -->
     <form action="/leave_class" method="post">
         <input type="hidden" name="student_id" value="{{ student_id }}">

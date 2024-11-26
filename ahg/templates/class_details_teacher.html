@@ -21,6 +21,28 @@
         {% endfor %}
     </ul>
 
+    <h3>Hausaufgaben:</h3>
+    <ul class="homework-list">
+        {% for homework in homework_list %}
+            <li>
+                <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
+                    {{ homework['description'] }} (Erstellt am: {{ homework['date_created'] }})
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <!-- Formular für neue Hausaufgabe -->
+    <h3>Neue Hausaufgabe erstellen</h3>
+    <form action="/create_homework" method="post">
+        <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
+        <label for="description">Beschreibung:</label>
+        <textarea id="description" name="description" required></textarea><br>
+        <button type="submit">Hausaufgabe erstellen</button>
+    </form>
+
+
+
     <form action="/delete_class" method="post" onsubmit="return confirm('Möchten Sie diesen Kurs wirklich löschen? Alle zugehörigen Daten werden entfernt.')">
         <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
         <input type="hidden" name="teacher_id" value="{{ teacher_id }}">

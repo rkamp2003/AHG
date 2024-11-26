@@ -16,7 +16,7 @@
         {% for class in joined_classes %}
             <li>
                 <a href="/class_details_student/{{ class['id'] }}/{{ student['id'] }}">
-                    {{ class['class_name'] }} - Fach: {{ class['subject'] }} (Lehrer: {{ class['teacher_name'] }})
+                    {{ class['class_name'] }} - Fach: {{ class['subject'] }} - Lehrer: {{ class['teacher_name'] }}
                 </a>
             </li>
         {% endfor %}
