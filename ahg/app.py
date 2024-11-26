@@ -660,12 +660,20 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
 
 @app.route('/delete_homework', methods=['POST'])
 def delete_homework():
-    homework_id = request.form['homework_id']
+    homework_id = request.form.get('homework_id')
+    class_id = request.form.get('class_id')
+    teacher_id = request.form.get('teacher_id')
+    
+    if not homework_id or not class_id or not teacher_id:
+        # Fehlerbehandlung, falls ein erwartetes Feld fehlt
+        return "Fehlende Parameter. Operation konnte nicht abgeschlossen werden.", 400
+
     conn = get_db_connection()
     conn.execute('DELETE FROM Homework WHERE id = ?', (homework_id,))
     conn.commit()
     conn.close()
-    return redirect(url_for('class_details_teacher', class_id=request.form['class_id'], teacher_id=request.form['teacher_id']))
+
+    return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=teacher_id))
 
 
 if __name__ == '__main__':
