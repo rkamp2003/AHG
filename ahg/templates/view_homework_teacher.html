@@ -28,7 +28,7 @@
                     {% if question['question_type'] == 'multiple_choice' %}
                         {% for option in question['options'] %}
                             <label>
-                                <input type="radio" name="answer_{{ loop.index }}" value="{{ option }}" onclick="toggleRadio(this)">
+                                <input type="radio" name="answer_{{ loop.parentloop.index }}" value="{{ option }}" onclick="toggleRadio(this)">
                                 {{ option }}
                             </label>
                         {% endfor %}
@@ -52,30 +52,33 @@
     
         function checkAnswers() {
             const elements = document.getElementById('homework-form').elements;
-    
+
             for (let el of elements) {
                 if (el.name.startsWith('answer_')) {
-                    const index = el.name.split('_')[1];
-                    const userAnswer = (el.type === 'radio' && !el.checked) ? null : el.value.trim();
+                    const index = el.name.split('_')[1]; // Hole die Frage-ID
+                    const userAnswer = el.type === 'radio' ? (el.checked ? el.value.trim() : null) : el.value.trim(); // Bei Radio-Buttons nur wenn gewählt
                     const correctAnswer = (correctAnswers[index] || "").trim();
                     const resultSpan = document.getElementById('result_' + index);
-    
-                    let isCorrect = userAnswer === correctAnswer;
-    
-                    if (isCorrect) {
-                        resultSpan.innerText = '✔️';
-                        resultSpan.classList.add('correct');
-                        resultSpan.classList.remove('incorrect');
-                    } else {
-                        resultSpan.innerText = `❌ Richtige Antwort: ${correctAnswers[index]}. Erklärung: ${explanations[index]}`;
-                        resultSpan.classList.add('incorrect');
-                        resultSpan.classList.remove('correct');
+
+                    // Nur prüfen, wenn eine Antwort vorliegt
+                    if (userAnswer !== null) {
+                        if (userAnswer === correctAnswer) {
+                            resultSpan.innerText = '✔️';
+                            resultSpan.classList.add('correct');
+                            resultSpan.classList.remove('incorrect');
+                        } else {
+                            resultSpan.innerText = `❌ Richtige Antwort: ${correctAnswers[index]}. Erklärung: ${explanations[index]}`;
+                            resultSpan.classList.add('incorrect');
+                            resultSpan.classList.remove('correct');
+                        }
                     }
                 }
             }
-    
-            document.getElementById('submit-button').classList.remove('hidden');
-        }
+
+    // Zeige den Abschicken-Button
+    document.getElementById('submit-button').classList.remove('hidden');
+}
+
     
         function toggleRadio(radio) {
             const name = radio.name;

@@ -361,7 +361,7 @@ def leave_class():
     # Generiere Hausaufgaben mit ChatGPT
     prompt = f"""
     Erstelle 3 Versionen einer Hausaufgabe für das Fach {class_info['subject']} in der Jahrgangsstufe {class_info['grade_level']}:
-    Zur Refernez, Schüler haben ein Skill_level zwische 1 und 10 wobei 10 das beste/scgwierigste ist
+    Zur Refernez, Schüler haben ein Skill_level zwische 1 und 10 wobei 10 das beste/schwierigste ist
     1. Schwierigkeitsgrad (skill_level 1)
     2. Schwierigkeitsgrad (skill_level 4)
     3. Schwierigkeitsgrad (skill_level 8)
