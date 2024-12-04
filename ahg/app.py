@@ -21,6 +21,8 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+conn = get_db_connection()
+
 ### HOMEPAGE ###
 
 @app.route('/')
@@ -628,7 +630,7 @@ def create_homework():
     conn = get_db_connection()
     cursor = conn.execute(
         'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
-        (class_id, description, title, datetime.now())
+        (class_id, description, title, datetime.now().date())
     )
     homework_id = cursor.lastrowid
 
@@ -656,8 +658,29 @@ def view_homework_student(homework_id, student_id):
     import json
     conn = get_db_connection()
 
+    # Abrufen der Klasseninformationen
+    class_info = conn.execute(
+        'SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name '
+        'FROM Classes '
+        'JOIN Teachers ON Classes.teacher_id = Teachers.id '
+        'JOIN Homework ON Classes.id = Homework.class_id '
+        'WHERE Homework.id = ?', (homework_id,)
+    ).fetchone()
+
+    # Sicherstellen, dass die Klasseninformationen erfolgreich geladen werden
+    if not class_info:
+        conn.close()
+        return "Fehler: Diese Klasse existiert nicht.", 404
+
+    # Abrufen des Skill-Levels des Schülers
+    student = conn.execute(
+        'SELECT skill_level FROM Participants WHERE id = ?', (student_id,)
+    ).fetchone()
+    student_skill_level = student['skill_level'] if student else 0
+
+    # Bestimmen der Hausaufgabe
     homework = conn.execute(
-        'SELECT id, title, description, date_created FROM Homework WHERE id = ?',
+        'SELECT id, title, description, date_created, class_id FROM Homework WHERE id = ?',
         (homework_id,)
     ).fetchone()
 
@@ -665,9 +688,10 @@ def view_homework_student(homework_id, student_id):
         conn.close()
         return "Fehler: Diese Hausaufgabe existiert nicht.", 404
 
+    # Abrufen der Fragen und Filtern durch Skill-Level
     question_data = conn.execute(
-        'SELECT question, options, correct_answer, explanation FROM HomeworkQuestions WHERE homework_id = ?',
-        (homework_id,)
+        'SELECT question, correct_answer, explanation, options FROM HomeworkQuestions WHERE homework_id = ? AND skill_level <= ?',
+        (homework_id, student_skill_level)
     ).fetchall()
 
     questions = []
@@ -687,69 +711,43 @@ def view_homework_student(homework_id, student_id):
         'view_homework_student.html',
         homework=homework,
         questions=questions,
+        class_info=class_info,  # Wichtige Änderung: class_info wird hier übergeben
         student_id=student_id,
         correct_answers=correct_answers,
         explanations=explanations
     )
-
-@app.route('/submit_homework', methods=['POST'])
-def submit_homework():
-    student_id = request.form['student_id']
-    homework_id = request.form['homework_id']
-    class_id = request.form['class_id']
-
-    answers = []
-    correct_count = 0
-    incorrect_count = 0
-
-    for key, value in request.form.items():
-        if key.startswith("answer_"):
-            question_index = int(key.split("_")[1])
-            if correct_answers[question_index] == value:
-                correct_count += 1
-            else:
-                incorrect_count += 1
-
-    print(f"Student {student_id} hat {correct_count} richtige und {incorrect_count} falsche Antworten.")
-
-    conn = get_db_connection()
-
-    # Speichere die Ergebnisse in der Datenbank in einer hypothetischen Tabelle 'HomeworkResults'
-    conn.execute(
-        'INSERT INTO HomeworkResults (homework_id, student_id, correct_count, incorrect_count) '
-        'VALUES (?, ?, ?, ?)',
-        (homework_id, student_id, correct_count, incorrect_count)
-    )
-    conn.commit()
-    conn.close()
-
-    return redirect(url_for('class_details_student', class_id=class_id, student_id=student_id))
-
 
 @app.route('/view_homework_teacher/<int:homework_id>/<int:class_id>/<int:teacher_id>')
 def view_homework_teacher(homework_id, class_id, teacher_id):
     import json
     conn = get_db_connection()
 
+    # Abrufen der Hausaufgabendetails
     homework = conn.execute(
         'SELECT id, title, description, date_created FROM Homework WHERE id = ?',
         (homework_id,)
     ).fetchone()
 
     if not homework:
+        conn.close()
         return "Fehler: Hausaufgabe nicht gefunden", 404
 
+    # Abrufen aller Fragen ohne Berücksichtigung des Skill-Levels
     question_data = conn.execute(
-        'SELECT question, options, correct_answer, explanation FROM HomeworkQuestions WHERE homework_id = ?',
+        'SELECT question, correct_answer, explanation, options FROM HomeworkQuestions WHERE homework_id = ?',
         (homework_id,)
     ).fetchall()
 
     questions = []
-    
-    for row in question_data:
+    correct_answers = {}
+    explanations = {}
+
+    for idx, row in enumerate(question_data):
         question = dict(row)
-        question['options'] = json.loads(question['options'])
-        questions.append(question)
+        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
+        questions.append({'index': idx, **question})
+        correct_answers[idx] = int(question['correct_answer'])  # Sicherstellen, dass die Antwort als Nummer vorliegt
+        explanations[idx] = question['explanation']
 
     conn.close()
 
@@ -759,10 +757,9 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         questions=questions,
         class_info={'id': class_id},
         teacher_id=teacher_id,
-        correct_answers={idx: q['correct_answer'] for idx, q in enumerate(questions)},
-        explanations={idx: q['explanation'] for idx, q in enumerate(questions)}
+        correct_answers=correct_answers,
+        explanations=explanations
     )
-
 
 @app.route('/delete_homework', methods=['POST'])
 def delete_homework():

@@ -7,11 +7,11 @@
 </head>
 <body>
     <div class="top-buttons" style="display: flex; justify-content: flex-start;">
-        <a href="/class_details_student/{{ homework['id'] }}/{{ student_id }}" class="button">Zurück zur Klasse</a>
+        <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Zurück zur Klasse</a>
     </div>
 
     <h1>Hausaufgabe: {{ homework['title'] }}</h1>
-    <h3>{{ homework['description'] }}</h3>
+    <h3>{{ class_info.class_name }} - {{ class_info.subject }} (Lehrer: {{ class_info.teacher_name }})</h3>
     <p>Erstellt am: {{ homework['date_created'] }}</p>
 
     <form id="homework-form" action="/submit_homework" method="post">
@@ -43,30 +43,46 @@
     <script>
         const correctAnswers = {{ correct_answers | tojson }};
         const explanations = {{ explanations | tojson }};
+        const questions = {{ questions | tojson }};
 
         function checkAnswers() {
             const form = document.getElementById('homework-form');
             const elements = form.elements;
+            const checkedAnswers = {};
 
             for (let el of elements) {
                 if (el.type === "radio" && el.checked) {
                     const questionIndex = el.name.split('_')[1];
-                    const userAnswer = parseInt(el.value);
-                    const correctAnswer = correctAnswers[questionIndex];
-                    const resultSpan = document.getElementById('result_' + questionIndex);
+                    checkedAnswers[questionIndex] = parseInt(el.value, 10);
+                }
+            }
 
-                    if (userAnswer === correctAnswer) {
-                        resultSpan.innerText = '✔️ Richtig!';
-                        resultSpan.classList.add('correct');
-                        resultSpan.classList.remove('incorrect');
-                    } else {
-                        resultSpan.innerText = `❌ Falsch! Erklärung: ${explanations[questionIndex]}`;
-                        resultSpan.classList.add('incorrect');
-                        resultSpan.classList.remove('correct');
-                    }
+            console.log("Checked Answers:", checkedAnswers);
+
+            for (let questionIndex in correctAnswers) {
+                const resultSpan = document.getElementById('result_' + questionIndex);
+                const userAnswer = checkedAnswers[questionIndex];
+                // Parse the correct answer to ensure it’s dealt with as a number
+                const correctAnswer = parseInt(correctAnswers[questionIndex], 10);
+
+                if (userAnswer === undefined) {
+                    // Handle no selection
+                    const correctText = questions[questionIndex].options[correctAnswer].option;
+                    resultSpan.innerText = `❌ Falsch! Keine Antwort ausgewählt. Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
+                    resultSpan.classList.add('incorrect');
+                    resultSpan.classList.remove('correct');
+                } else if (userAnswer === correctAnswer) {
+                    resultSpan.innerText = '✔️ Richtig!';
+                    resultSpan.classList.add('correct');
+                    resultSpan.classList.remove('incorrect');
+                } else {
+                    const correctText = questions[questionIndex].options[correctAnswer].option;
+                    resultSpan.innerText = `❌ Falsch! Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
+                    resultSpan.classList.add('incorrect');
+                    resultSpan.classList.remove('correct');
                 }
             }
         }
-    </script>
+</script>
 </body>
 </html>
