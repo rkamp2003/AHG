@@ -211,3 +211,16 @@ form {
 .submit-button.danger:hover {
     background-color: #c0392b;
 }
+
+.correct {
+    color: green;
+}
+.incorrect {
+    color: red;
+}
+
+p {
+    color: #333;
+    font-size: 1.1em;
+    text-align: center;
+}

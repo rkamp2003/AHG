@@ -6,10 +6,15 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="top-buttons">
+    <div class="top-buttons" style="display: flex; justify-content: space-between; align-items: center;">
         <a href="/teacher_dashboard" class="button">Dashboard</a>
+        <form action="/delete_class" method="post" onsubmit="return confirm('Möchten Sie diesen Kurs wirklich löschen? Alle zugehörigen Daten werden entfernt.')">
+            <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
+            <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
+            <button type="submit" class="submit-button danger no-background">Kurs löschen</button>
+        </form>
     </div>
-    
+
     <h1>{{ class_info['class_name'] }}</h1>
     <h2>Fach: {{ class_info['subject'] }}</h2>
     <h3>Lehrer: {{ class_info['teacher_name'] }}</h3>
@@ -22,7 +27,7 @@
     </ul>
 
     <h3>Hausaufgaben:</h3>
-    <ul class="homework-list">
+    <ul class="class-list">
         {% for homework in homework_list %}
             <li>
                 <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
@@ -43,15 +48,5 @@
         <textarea id="description" name="description" required></textarea>
         <button type="submit">Hausaufgabe erstellen</button>
     </form>
-    
-
-
-
-    <form action="/delete_class" method="post" onsubmit="return confirm('Möchten Sie diesen Kurs wirklich löschen? Alle zugehörigen Daten werden entfernt.')">
-        <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
-        <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
-        <button type="submit" class="submit-button danger">Kurs löschen</button>
-    </form>
-    
 </body>
 </html>

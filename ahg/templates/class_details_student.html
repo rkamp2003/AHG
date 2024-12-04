@@ -21,11 +21,12 @@
     </ul>
 
     <h3>Hausaufgaben</h3>
-    <ul>
+    <ul class="class-list">
         {% for homework in homework_list %}
             <li>
-                <a href="/homework/{{ homework['id'] }}/{{ student_id }}">Hausaufgabe vom {{ homework['date_created'] }}</a>
-            </li>
+                <a href="/homework/{{ homework['id'] }}/{{ student_id }}"> 
+                    Hausaufgabe vom {{ homework['date_created'] }}</a>
+                </li>
         {% endfor %}
     </ul>
 

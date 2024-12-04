@@ -8,6 +8,7 @@
 <body>
     <div class="top-buttons" style="display: flex; justify-content: space-between;">
         <a href="/class_details_teacher/{{ class_info['id'] }}/{{ teacher_id }}" class="button">Zurück zur Klasse</a>
+
         <form action="/delete_homework" method="post" style="display:inline;" onsubmit="return confirm('Möchten Sie diese Hausaufgabe wirklich löschen?')">
             <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
             <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
