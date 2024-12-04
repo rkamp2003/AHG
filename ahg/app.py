@@ -361,28 +361,29 @@ def leave_class():
     # Generiere Hausaufgaben mit ChatGPT
     prompt = f"""
     Erstelle 3 Versionen einer Hausaufgabe für das Fach {class_info['subject']} in der Jahrgangsstufe {class_info['grade_level']}:
-    Zur Refernez, Schüler haben ein Skill_level zwische 1 und 10 wobei 10 das beste/schwierigste ist
+    Zur Referenz: Schüler haben ein Skill_level zwischen 1 und 10, wobei 10 das beste/schwierigste ist.
     1. Schwierigkeitsgrad (skill_level 1)
     2. Schwierigkeitsgrad (skill_level 4)
     3. Schwierigkeitsgrad (skill_level 8)
-    Hausaufgabenbeschreibung: {description}
-    Die Hausaufgabe sollte Multiple-Choice-Fragen und offene Fragen enthalten.
-    Gib auch die richtigen Antworten und Erklärungen zurück.
 
-    Es soll insgesamt 15 fragen geben, 5 zu jedem Schwierigkeitsgrad
-    Bitte selbst wenn die Antwort eine Zahl ist wie 14x dennoch alles als "type": "text"
+    Hausaufgabenbeschreibung: {description}
+
+    Die Hausaufgabe sollte ausschließlich Multiple-Choice-Fragen enthalten. 
+    Jede Frage sollte vier Antwortmöglichkeiten haben und die richtige Antwort sollte als Index (0-basiert) zurückgegeben werden.
+
+    Erstelle insgesamt 15 Fragen: 5 Fragen pro Schwierigkeitsgrad.
 
     Format:
     [
         {"skill_level": 1, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": "...", "explanation": "...", "type": "multiple_choice"},
-            {"question": "...", "answer": "...", "explanation": "...", "type": "text"}
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."},
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "explanation": "..."}
         ]},
         {"skill_level": 4, "questions": [
-            {"question": "...", "answer": "...", "explanation": "...", "type": "text"}
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "..."}
         ]},
         {"skill_level": 8, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": "...", "explanation": "...", "type": "multiple_choice"}
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "..."}
         ]}
     ]
     """
@@ -392,22 +393,34 @@ def leave_class():
     )
     generated_content = response.choices[0].message['content']
 
-    homework_questions = json.loads(generated_content)  # Falls das Ergebnis JSON ist
+    question_data = json.loads(generated_content)  # Falls das Ergebnis JSON ist
 
-    # Speichere Hausaufgabe in der Datenbank
-    cursor = conn.execute('INSERT INTO Homework (class_id, description, date_created) VALUES (?, ?, ?)',
-                           (class_id, description, datetime.now()))
+    homework_questions = []
+    for idx, row in enumerate(question_data):
+        question = dict(row)
+        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
+        homework_questions.append(question)
+
+
+    conn = get_db_connection()
+    cursor = conn.execute(
+        'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
+        (class_id, description, title, datetime.now())
+    )
     homework_id = cursor.lastrowid
 
-    # Speichere die generierten Fragen
+    # Speichern der Fragen
     for question_set in homework_questions:
+        skill_level = question_set['skill_level']
         for question in question_set['questions']:
+            options = json.dumps(question['options'])
             conn.execute(
-                'INSERT INTO HomeworkQuestions (homework_id, skill_level, question, correct_answer, explanation, question_type) '
-                'VALUES (?, ?, ?, ?, ?, ?)',
-                (homework_id, question_set['skill_level'], question['question'], question['answer'],
-                 question.get('explanation', ''), question.get('type', 'text'))
+                '''INSERT INTO HomeworkQuestions
+                   (homework_id, skill_level, question, correct_answer, explanation, question_type, options)
+                   VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?)''',
+                (homework_id, skill_level, question['question'], question['answer'], question['explanation'], options)
             )
+
     conn.commit()
     conn.close()
 
@@ -415,144 +428,236 @@ def leave_class():
 
 @app.route('/create_homework', methods=['POST'])
 def create_homework():
+    import json
+    from datetime import datetime
+
     class_id = request.form['class_id']
     description = request.form['description']
+    title = request.form['title'] 
 
-    # Simulierte Hausaufgaben-Daten (später durch API-Aufruf ersetzt)
-    # Simulierte Hausaufgaben-Daten (später durch API-Aufruf ersetzt)
-    homework_questions = [
-        {"skill_level": 1, "questions": [
-            {"question": "Was ist die Ableitung einer konstanten Funktion?", 
-            "options": ["0", "1", "f(x)", "x"], 
-            "answer": "0", 
-            "explanation": "Die Ableitung einer konstanten Funktion ist immer Null.", 
-            "type": "multiple_choice"},
+    # Beispielhafte API-Antwort von ChatGPT (simuliert)
+    question_data = [
+    {
+        "skill_level": 1,
+        "questions": [
+            {
+                "question": "Was beschreibt die Ableitung einer Funktion?",
+                "options": [
+                    "Die Fläche unter der Funktion",
+                    "Die Steigung der Funktion an einem Punkt",
+                    "Den Schnittpunkt mit der y-Achse",
+                    "Die Anzahl der Nullstellen"
+                ],
+                "answer": 1,
+                "explanation": "Die Ableitung beschreibt die Steigung der Funktion an einem bestimmten Punkt."
+            },
+            {
+                "question": "Was ist die Ableitung von f(x) = 2x?",
+                "options": [
+                    "f'(x) = 2",
+                    "f'(x) = x",
+                    "f'(x) = 2x²",
+                    "f'(x) = 1/2x"
+                ],
+                "answer": 0,
+                "explanation": "Die Ableitung von 2x ist 2, da der Exponent von x um 1 reduziert wird."
+            },
+            {
+                "question": "Welche Funktion hat eine konstante Ableitung von 3?",
+                "options": [
+                    "f(x) = 3x",
+                    "f(x) = x³",
+                    "f(x) = x² + 3",
+                    "f(x) = x + 3"
+                ],
+                "answer": 0,
+                "explanation": "Die Funktion f(x) = 3x hat eine konstante Ableitung von 3, da die Steigung konstant ist."
+            },
+            {
+                "question": "Was ist die Ableitung einer konstanten Funktion f(x) = 5?",
+                "options": [
+                    "f'(x) = 5",
+                    "f'(x) = 1",
+                    "f'(x) = 0",
+                    "f'(x) = x"
+                ],
+                "answer": 2,
+                "explanation": "Die Ableitung einer konstanten Funktion ist immer 0."
+            },
+            {
+                "question": "Welche Aussage ist wahr über die Ableitung einer linearen Funktion?",
+                "options": [
+                    "Die Ableitung ist immer gleich der Funktion.",
+                    "Die Ableitung ist konstant.",
+                    "Die Ableitung ist immer null.",
+                    "Die Ableitung verändert sich an jedem Punkt."
+                ],
+                "answer": 1,
+                "explanation": "Die Ableitung einer linearen Funktion ist konstant, da die Steigung nicht variiert."
+            }
+        ]
+    },
+    {
+        "skill_level": 4,
+        "questions": [
+            {
+                "question": "Was ist die Ableitung von f(x) = x²?",
+                "options": [
+                    "f'(x) = 2x",
+                    "f'(x) = x",
+                    "f'(x) = 2x²",
+                    "f'(x) = 1"
+                ],
+                "answer": 0,
+                "explanation": "Die Ableitung von x² ist 2x, da der Exponent 2 um 1 reduziert wird und der ursprüngliche Exponent als Faktor dient."
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = 3x³.",
+                "options": [
+                    "f'(x) = 9x²",
+                    "f'(x) = 3x²",
+                    "f'(x) = 6x",
+                    "f'(x) = 3x³"
+                ],
+                "answer": 0,
+                "explanation": "Die Regel besagt, dass der Exponent mit dem Faktor multipliziert wird, also 3 * 3 = 9 und der Exponent um 1 reduziert wird."
+            },
+            {
+                "question": "Welche der folgenden Funktionen hat die Ableitung f'(x) = 4x³?",
+                "options": [
+                    "f(x) = x⁴",
+                    "f(x) = x³",
+                    "f(x) = x⁴ + 1",
+                    "f(x) = x³ + 4"
+                ],
+                "answer": 0,
+                "explanation": "Die Funktion f(x) = x⁴ hat die Ableitung f'(x) = 4x³ nach der Potenzregel."
+            },
+            {
+                "question": "Was ist die Ableitung von f(x) = 2x² + 3x?",
+                "options": [
+                    "f'(x) = 4x + 3",
+                    "f'(x) = 2x + 3",
+                    "f'(x) = 4x² + 3",
+                    "f'(x) = 2x²"
+                ],
+                "answer": 0,
+                "explanation": "Die Ableitung von 2x² ist 4x, und die Ableitung von 3x ist 3."
+            },
+            {
+                "question": "Für welche Funktion gilt: f'(x) = 6x + 2?",
+                "options": [
+                    "f(x) = 6x² + 2x",
+                    "f(x) = 3x² + 2x",
+                    "f(x) = 3x² + x",
+                    "f(x) = 6x + 2"
+                ],
+                "answer": 1,
+                "explanation": "Die Ableitung von 3x² ist 6x und die Ableitung von 2x ist 2."
+            }
+        ]
+    },
+    {
+        "skill_level": 8,
+        "questions": [
+            {
+                "question": "Was ist die Ableitung von f(x) = x³ - 2x² + x?",
+                "options": [
+                    "f'(x) = 3x² - 4x + 1",
+                    "f'(x) = 3x² - 4x",
+                    "f'(x) = 3x² - 2x + 1",
+                    "f'(x) = 2x³ - 4x² + x"
+                ],
+                "answer": 0,
+                "explanation": "Die Ableitung von x³ ist 3x², von -2x² ist -4x, und von x ist 1."
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = 4x³ - x² + 6.",
+                "options": [
+                    "f'(x) = 12x² - 2x",
+                    "f'(x) = 12x² - x + 6",
+                    "f'(x) = 12x³ - 2x",
+                    "f'(x) = 4x² - x"
+                ],
+                "answer": 0,
+                "explanation": "Die Ableitung von 4x³ ist 12x², die Ableitung von -x² ist -2x, und die Ableitung der Konstanten 6 ist 0."
+            },
+            {
+                "question": "Welche Funktion hat die Ableitung f'(x) = 5x⁴ - 3x²?",
+                "options": [
+                    "f(x) = x⁵ - x³",
+                    "f(x) = 5x³ - 3x²",
+                    "f(x) = x⁵ - x³ + C",
+                    "f(x) = x⁴ - x³"
+                ],
+                "answer": 2,
+                "explanation": "Die Funktion f(x) = x⁵ - x³ hat die Ableitung f'(x) = 5x⁴ - 3x². Die Konstante C fällt bei der Ableitung weg."
+            },
+            {
+                "question": "Was ist die Ableitung von f(x) = 2x⁴ - x³ + 5x?",
+                "options": [
+                    "f'(x) = 8x³ - 3x² + 5",
+                    "f'(x) = 8x³ - 3x²",
+                    "f'(x) = 2x³ - 3x² + 5",
+                    "f'(x) = 8x³ + x² + 5"
+                ],
+                "answer": 0,
+                "explanation": "Die Ableitung von 2x⁴ ist 8x³, von -x³ ist -3x², und von 5x ist 5."
+            },
+            {
+                "question": "Bestimme die Ableitung von f(x) = x³ + 2x² - 3x + 7.",
+                "options": [
+                    "f'(x) = 3x² + 4x - 3",
+                    "f'(x) = 3x² + 4x + 3",
+                    "f'(x) = 3x² - 4x + 3",
+                    "f'(x) = x² + 2x - 3"
+                ],
+                "answer": 0,
+                "explanation": "Die Ableitung von x³ ist 3x², von 2x² ist 4x, und von -3x ist -3. Die Konstante 7 fällt weg."
+            }
+        ]
+    }
+]
+    homework_questions = []
+    for idx, row in enumerate(question_data):
+        question = dict(row)
+        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
+        homework_questions.append(question)
 
-            {"question": "Welches Symbol wird oft für die Ableitung einer Funktion verwendet?", 
-            "options": ["f'", "Δx", "f(x)", "f''"], 
-            "answer": "f'", 
-            "explanation": "Das Symbol f' wird oft verwendet, um die Ableitung einer Funktion f(x) darzustellen.", 
-            "type": "multiple_choice"},
 
-            {"question": "Die Ableitung beschreibt die ______ der Funktion zu einem Punkt.", 
-            "options": ["Division", "Multiplikation", "Steigung", "Addition"], 
-            "answer": "Steigung", 
-            "explanation": "Die Ableitung beschreibt die Änderungsrate einer Funktion an einem bestimmten Punkt.", 
-            "type": "multiple_choice"},
-
-            {"question": "Schreiben Sie die Ableitung der linearen Funktion f(x) = 3x.", 
-            "answer": "3", 
-            "explanation": "Die Ableitung einer linearen Funktion f(x) = mx ist konstant und entspricht dem Koeffizienten m.", 
-            "type": "text"},
-
-            {"question": "Welche geometrische Bedeutung hat die Ableitung an einem Punkt?", 
-            "options": ["Tangentenlänge", "Winkelsumme", "Tangentensteigung", "Fläche"], 
-            "answer": "Tangentensteigung", 
-            "explanation": "Die Ableitung an einem Punkt entspricht der Steigung der Tangente an die Kurve in diesem Punkt.", 
-            "type": "multiple_choice"}
-        ]},
-        {"skill_level": 4, "questions": [
-            {"question": "Wie lautet die Ableitung von f(x) = x^2?", 
-            "answer": "2x", 
-            "explanation": "Die Potenzregel besagt, dass die Ableitung von x^n gleich n*x^(n-1) ist.", 
-            "type": "text"},
-
-            {"question": "Bestimmen Sie die Ableitung von f(x) = 5x + 3.", 
-            "answer": "5", 
-            "explanation": "Die Ableitung einer linearen Funktion ax + b ist a.", 
-            "type": "number"},
-
-            {"question": "Was ist die Ableitung von f(x) = x^3?", 
-            "answer": "3x^2", 
-            "explanation": "Anwendung der Potenzregel: Der Exponent wird als Faktor vorangestellt und der Exponent um eins reduziert.", 
-            "type": "text"},
-
-            {"question": "Welche Regel verwenden Sie zum Ableiten von f(x) = 7?", 
-            "answer": "Die Regel der konstanten Funktion.", 
-            "explanation": "Die Ableitung einer konstanten Funktion ist immer Null.", 
-            "type": "text"},
-
-            {"question": "Warum ist die Ableitung von f(x) = 2x^2 + 3 nicht konstant?", 
-            "answer": "Sie ist nicht konstant, da sie von x abhängt. Die Ableitung ist 4x.", 
-            "explanation": "Die Ableitung ändert sich mit x, da die Potenzregel auf den polynomiellen Teil angewendet wird.", 
-            "type": "text"}
-        ]},
-        {"skill_level": 8, "questions": [
-            {"question": "Bestimmen Sie die Ableitung von f(x) = 4x^4.", 
-            "options": ["12x^3", "16x^3", "4x^5", "8x^3"], 
-            "answer": "16x^3", 
-            "explanation": "Durch die Potenzregel erhält man die Ableitung, indem man den Exponenten als Faktor multipliziert und den Exponenten um eins verringert.", 
-            "type": "multiple_choice"},
-
-            {"question": "Die Ableitung von f(x) = x^2 + 2x + 1 ist:", 
-            "options": ["2x + 2", "x + 2", "2x", "4x + 1"], 
-            "answer": "2x + 2", 
-            "explanation": "Die Ableitung der Summe ist die Summe der Ableitungen der Einzelfunktionen.", 
-            "type": "multiple_choice"},
-
-            {"question": "Was ist die Ableitung von f(x) = x^5?", 
-            "answer": "5x^4", 
-            "explanation": "Anwendung der Potenzregel für Ableitungen.", 
-            "type": "number"},
-
-            {"question": "Die Ableitung der Funktion f(x) = 3x^3 - 4x lautet:", 
-            "options": ["3x^2 - 4", "9x^2 - 4", "6x^2 - 4x", "9x^2"], 
-            "answer": "9x^2 - 4", 
-            "explanation": "Leiten Sie jeden Term der Funktion einzeln ab und summieren Sie die Ergebnisse.", 
-            "type": "multiple_choice"},
-
-            {"question": "Warum ist die Ableitung der Funktion f(x) = x^7 - x korrekt als 7x^6 - 1 angegeben?", 
-            "options": ["Ja, korrekt", "Nein, sollte 7x^6 + 1 sein", "Nein, sollte -7x^6 sein", "Nein, Ableitung ist konstant"], 
-            "answer": "Ja, korrekt", 
-            "explanation": "Die Potenzregel wird angewendet, jeder Exponent wird einzeln bearbeitet.", 
-            "type": "multiple_choice"}
-        ]}
-    ]
-
-    # Speichern in der Datenbank
     conn = get_db_connection()
-    cursor = conn.execute('INSERT INTO Homework (class_id, description, date_created) VALUES (?, ?, ?)',
-                           (class_id, description, datetime.now()))
+    cursor = conn.execute(
+        'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
+        (class_id, description, title, datetime.now())
+    )
     homework_id = cursor.lastrowid
 
+    # Speichern der Fragen
     for question_set in homework_questions:
+        skill_level = question_set['skill_level']
         for question in question_set['questions']:
-            options = json.dumps(question.get('options', []))  # Konvertiere die Optionsliste in einen JSON-String
+            options = json.dumps(question['options'])
             conn.execute(
-                '''INSERT INTO HomeworkQuestions 
-                   (homework_id, skill_level, question, correct_answer, explanation, question_type, options) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                (homework_id, question_set['skill_level'], question['question'], question['answer'],
-                 question['explanation'], question['type'], options)
+                '''INSERT INTO HomeworkQuestions
+                   (homework_id, skill_level, question, correct_answer, explanation, question_type, options)
+                   VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?)''',
+                (homework_id, skill_level, question['question'], question['answer'], question['explanation'], options)
             )
+
     conn.commit()
     conn.close()
 
     return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session['teacher_id']))
 
+
+
 @app.route('/homework/<int:homework_id>/<int:student_id>')
 def view_homework_student(homework_id, student_id):
+    import json
     conn = get_db_connection()
-    
-    # Klasseninformation abrufen
-    class_info = conn.execute(
-        'SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name '
-        'FROM Classes '
-        'JOIN Teachers ON Classes.teacher_id = Teachers.id '
-        'JOIN Homework ON Classes.id = Homework.class_id '
-        'WHERE Homework.id = ?', (homework_id,)
-    ).fetchone()
-
-    # Sicherstellen, dass die Klasseninformationen erfolgreich geladen werden
-    if not class_info:
-        conn.close()
-        return "Fehler: Diese Klasse existiert nicht.", 404
-
-    student = conn.execute('SELECT skill_level FROM Participants WHERE id = ?', (student_id,)).fetchone()
-    student_skill_level = student['skill_level'] if student else 0
 
     homework = conn.execute(
-        'SELECT id, description, date_created, class_id FROM Homework WHERE id = ?',
+        'SELECT id, title, description, date_created FROM Homework WHERE id = ?',
         (homework_id,)
     ).fetchone()
 
@@ -561,8 +666,8 @@ def view_homework_student(homework_id, student_id):
         return "Fehler: Diese Hausaufgabe existiert nicht.", 404
 
     question_data = conn.execute(
-        'SELECT question, question_type, correct_answer, explanation, options FROM HomeworkQuestions WHERE homework_id = ? AND skill_level <= ?',
-        (homework_id, student_skill_level)
+        'SELECT question, options, correct_answer, explanation FROM HomeworkQuestions WHERE homework_id = ?',
+        (homework_id,)
     ).fetchall()
 
     questions = []
@@ -571,17 +676,15 @@ def view_homework_student(homework_id, student_id):
 
     for idx, row in enumerate(question_data):
         question = dict(row)
-        question['options'] = json.loads(question['options']) if question['options'] else []
-        questions.append(question)
-        
-        correct_answers[idx + 1] = question['correct_answer']
-        explanations[idx + 1] = question['explanation']
-    
+        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
+        questions.append({'index': idx, **question})
+        correct_answers[idx] = question['correct_answer']
+        explanations[idx] = question['explanation']
+
     conn.close()
 
     return render_template(
         'view_homework_student.html',
-        class_info=class_info,  # Übergibt die Klasseninformationen
         homework=homework,
         questions=questions,
         student_id=student_id,
@@ -625,27 +728,29 @@ def submit_homework():
 
 @app.route('/view_homework_teacher/<int:homework_id>/<int:class_id>/<int:teacher_id>')
 def view_homework_teacher(homework_id, class_id, teacher_id):
+    import json
     conn = get_db_connection()
-    
-    homework = conn.execute('SELECT id, description, date_created FROM Homework WHERE id = ?', (homework_id,)).fetchone()
+
+    homework = conn.execute(
+        'SELECT id, title, description, date_created FROM Homework WHERE id = ?',
+        (homework_id,)
+    ).fetchone()
+
     if not homework:
-        conn.close()
-        return "Fehler: Diese Hausaufgabe existiert nicht.", 404
+        return "Fehler: Hausaufgabe nicht gefunden", 404
 
-    question_data = conn.execute('SELECT question, question_type, correct_answer, explanation, options FROM HomeworkQuestions WHERE homework_id = ?', (homework_id,)).fetchall()
-    
+    question_data = conn.execute(
+        'SELECT question, options, correct_answer, explanation FROM HomeworkQuestions WHERE homework_id = ?',
+        (homework_id,)
+    ).fetchall()
+
     questions = []
-    correct_answers = {}
-    explanations = {}
-
-    for idx, row in enumerate(question_data):
-        question = dict(row)
-        question['options'] = json.loads(question['options']) if question['options'] else []
-        questions.append(question)
-        
-        correct_answers[idx + 1] = question['correct_answer']
-        explanations[idx + 1] = question['explanation']
     
+    for row in question_data:
+        question = dict(row)
+        question['options'] = json.loads(question['options'])
+        questions.append(question)
+
     conn.close()
 
     return render_template(
@@ -654,9 +759,10 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         questions=questions,
         class_info={'id': class_id},
         teacher_id=teacher_id,
-        correct_answers=correct_answers,
-        explanations=explanations
+        correct_answers={idx: q['correct_answer'] for idx, q in enumerate(questions)},
+        explanations={idx: q['explanation'] for idx, q in enumerate(questions)}
     )
+
 
 @app.route('/delete_homework', methods=['POST'])
 def delete_homework():

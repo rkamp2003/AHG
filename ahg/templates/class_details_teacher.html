@@ -36,10 +36,14 @@
     <h3>Neue Hausaufgabe erstellen</h3>
     <form action="/create_homework" method="post">
         <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
+        <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
+        <label for="title">Titel:</label>
+        <input type="text" id="title" name="title" required>
         <label for="description">Beschreibung:</label>
-        <textarea id="description" name="description" required></textarea><br>
+        <textarea id="description" name="description" required></textarea>
         <button type="submit">Hausaufgabe erstellen</button>
     </form>
+    
 
 
 
