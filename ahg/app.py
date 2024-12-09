@@ -349,12 +349,12 @@ def leave_class():
 
 @app.route('/create_homework', methods=['POST'])
 def create_homework():
+    import json
+    from datetime import datetime
+
     class_id = request.form['class_id']
     description = request.form['description']
-
-    # Hole Kursinformationen
-    conn = get_db_connection()
-    class_info = conn.execute('SELECT * FROM Classes WHERE id = ?', (class_id,)).fetchone()
+    title = request.form['title']
 
     # Generiere Hausaufgaben mit ChatGPT
     prompt = f"""
