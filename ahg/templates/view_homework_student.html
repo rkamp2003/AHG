@@ -21,7 +21,7 @@
         <ol>
             {% for question in questions %}
                 <li>
-                    <p>{{ question['question'] }}</p>
+                    <p>{{ question['question'] }} <br> <em>({{ question['taxonomy'] }})</em></p>
                     <ul>
                         {% for option in question['options'] %}
                             <li>
@@ -57,16 +57,12 @@
                 }
             }
 
-            console.log("Checked Answers:", checkedAnswers);
-
             for (let questionIndex in correctAnswers) {
                 const resultSpan = document.getElementById('result_' + questionIndex);
                 const userAnswer = checkedAnswers[questionIndex];
-                // Parse the correct answer to ensure it’s dealt with as a number
                 const correctAnswer = parseInt(correctAnswers[questionIndex], 10);
 
                 if (userAnswer === undefined) {
-                    // Handle no selection
                     const correctText = questions[questionIndex].options[correctAnswer].option;
                     resultSpan.innerText = `❌ Falsch! Keine Antwort ausgewählt. Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
                     resultSpan.classList.add('incorrect');
@@ -83,6 +79,6 @@
                 }
             }
         }
-</script>
+    </script>
 </body>
 </html>

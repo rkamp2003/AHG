@@ -24,7 +24,7 @@
         <ol>
             {% for question in questions %}
                 <li>
-                    <p>{{ question['question'] }}</p>
+                    <p>{{ question['question'] }} <br> <em>({{ question['taxonomy'] }} - skill_level: {{ question['skill_level'] }})</em></p>
                     <ul>
                         {% for option in question['options'] %}
                             <li>
