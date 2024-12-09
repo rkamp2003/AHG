@@ -362,30 +362,31 @@ def leave_class():
 
     # Generiere Hausaufgaben mit ChatGPT
     prompt = f"""
-    Erstelle 3 Versionen einer Hausaufgabe für das Fach {class_info['subject']} in der Jahrgangsstufe {class_info['grade_level']}:
+    Erstelle Hausaufgabe für das Fach {class_info['subject']} in der Jahrgangsstufe {class_info['grade_level']}:
     Zur Referenz: Schüler haben ein Skill_level zwischen 1 und 10, wobei 10 das beste/schwierigste ist.
-    1. Schwierigkeitsgrad (skill_level 1)
-    2. Schwierigkeitsgrad (skill_level 4)
-    3. Schwierigkeitsgrad (skill_level 8)
 
     Hausaufgabenbeschreibung: {description}
 
+    Orientiert an Blooms Taxonomy sollen die Fragen in die Aufgabentypen Remembering Understanding Applying Analyzing Evaluating Creating aufgeteilt werden.
+    1. Schwierigkeitsgrad (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analyzing
+    2. Schwierigkeitsgrad (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analyzing
+    3. Schwierigkeitsgrad (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analyzing
     Die Hausaufgabe sollte ausschließlich Multiple-Choice-Fragen enthalten. 
     Jede Frage sollte vier Antwortmöglichkeiten haben und die richtige Antwort sollte als Index (0-basiert) zurückgegeben werden.
 
-    Erstelle insgesamt 15 Fragen: 5 Fragen pro Schwierigkeitsgrad.
+    Erstelle insgesamt 30 Fragen: 10 Fragen pro Schwierigkeitsgrad.
 
     Format:
     [
         {"skill_level": 1, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."},
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "explanation": "..."}
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."},
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "explanation": "...", "taxonomy": "..."}
         ]},
         {"skill_level": 4, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "..."}
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "...", "taxonomy": "..."}
         ]},
         {"skill_level": 8, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "..."}
+            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "...", "taxonomy": "..."}
         ]}
     ]
     """
@@ -620,36 +621,34 @@ def create_homework():
         ]
     }
 ]
-    homework_questions = []
-    for idx, row in enumerate(question_data):
-        question = dict(row)
-        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
-        homework_questions.append(question)
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute(
+            'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
+            (class_id, description, title, datetime.now().date())
+        )
+        homework_id = cursor.lastrowid
 
+        # Speichern der Fragen
+        for question_set in question_data:
+            skill_level = question_set["skill_level"]
+            for question in question_set["questions"]:
+                # Speichere die Optionen als einfache Liste im JSON-Format
+                options = json.dumps(question["options"])
+                conn.execute(
+                    '''INSERT INTO HomeworkQuestions
+                       (homework_id, skill_level, question, correct_answer, explanation, question_type, options)
+                       VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?)''',
+                    (homework_id, skill_level, question["question"], question["answer"], question["explanation"], options)
+                )
 
-    conn = get_db_connection()
-    cursor = conn.execute(
-        'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
-        (class_id, description, title, datetime.now().date())
-    )
-    homework_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
 
-    # Speichern der Fragen
-    for question_set in homework_questions:
-        skill_level = question_set['skill_level']
-        for question in question_set['questions']:
-            options = json.dumps(question['options'])
-            conn.execute(
-                '''INSERT INTO HomeworkQuestions
-                   (homework_id, skill_level, question, correct_answer, explanation, question_type, options)
-                   VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?)''',
-                (homework_id, skill_level, question['question'], question['answer'], question['explanation'], options)
-            )
+    except Exception as e:
+        return f"Ein Fehler ist aufgetreten: {str(e)}", 500
 
-    conn.commit()
-    conn.close()
-
-    return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session['teacher_id']))
+    return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session.get('teacher_id')))
 
 
 
