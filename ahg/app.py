@@ -4,8 +4,9 @@ import json
 from datetime import datetime
 from openai  import OpenAI# ChatGPT API
 import os
+import openai
+import requests
 
-client = OpenAI()
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24) 
@@ -130,7 +131,7 @@ def class_details_teacher(class_id, teacher_id):
 
     # Hausaufgaben der Klasse abrufen
     homework_list = conn.execute(
-        'SELECT id, description, date_created FROM Homework WHERE class_id = ?',
+        'SELECT id, description, title,  date_created FROM Homework WHERE class_id = ?',
         (class_id,)
     ).fetchall()
 
@@ -299,7 +300,7 @@ def class_details_student(class_id, student_id):
 
     # Hausaufgaben der Klasse abrufen
     homework_list = conn.execute(
-        'SELECT id, description, date_created FROM Homework WHERE class_id = ?',
+        'SELECT id, date_created, title FROM Homework WHERE class_id = ?',
         (class_id,)
     ).fetchall()
 
@@ -352,53 +353,86 @@ def create_homework():
     import json
     from datetime import datetime
 
+    api_key = os.getenv("CHATGPT_API_KEY")
+
     class_id = request.form['class_id']
     description = request.form['description']
     title = request.form['title']
 
+    # Hole Klasseninformationen aus der Datenbank
+    conn = get_db_connection()
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = ?',
+        (class_id,)
+    ).fetchone()
+
     # Generiere Hausaufgaben mit ChatGPT
     prompt = f"""
-Erstelle Hausaufgabe für das Fach {class_info['subject']} in der Jahrgangsstufe {class_info['grade_level']}:
-Zur Referenz: Schüler haben ein Skill_level zwischen 1 und 10, wobei 10 das beste/schwierigste ist.
+    Erstelle Hausaufgabe für das Fach {class_info['subject']} in der Jahrgangsstufe {class_info['grade_level']}:
+    Zur Referenz: Schüler haben ein Skill_level zwischen 1 und 10, wobei 10 das beste/schwierigste ist.
 
-Hausaufgabenbeschreibung: {description}
+    Hausaufgabenbeschreibung: {description}
 
-Orientiert an Blooms Taxonomy sollen die Fragen in die Aufgabentypen Remembering Understanding Applying Analyzing Evaluating Creating aufgeteilt werden.
-1. Schwierigkeitsgrad (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analyzing
-2. Schwierigkeitsgrad (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analyzing
-3. Schwierigkeitsgrad (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analyzing
-Die Hausaufgabe sollte ausschließlich Multiple-Choice-Fragen enthalten. 
-Jede Frage sollte vier Antwortmöglichkeiten haben und die richtige Antwort sollte als Index (0-basiert) zurückgegeben werden.
+    Orientiert an Blooms Taxonomy sollen die Fragen in die Aufgabentypen Remembering Understanding Applying Analyzing Evaluating Creating aufgeteilt werden.
+    1. Schwierigkeitsgrad (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analyzing
+    2. Schwierigkeitsgrad (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analyzing
+    3. Schwierigkeitsgrad (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analyzing
+    Die Hausaufgabe sollte ausschließlich Multiple-Choice-Fragen enthalten. 
+    Jede Frage sollte vier Antwortmöglichkeiten haben und die richtige Antwort sollte als Index (0-basiert) zurückgegeben werden.
 
-normalerweise: Erstelle insgesamt 30 Fragen: 10 Fragen pro Schwierigkeitsgrad.
-aus testzwecken jedoch nur 5 insgesamt, zu welchen skill level oder taxonomy ist egal
-Format:
-[
-    {{"skill_level": 1, "questions": [
-        {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."}},
-        {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "explanation": "...", "taxonomy": "..."}}
-    ]}},
-    {{"skill_level": 4, "questions": [
-        {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "...", "taxonomy": "..."}}
-    ]}},
-    {{"skill_level": 8, "questions": [
-        {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "...", "taxonomy": "..."}}
-    ]}}
-]
-"""
+    normalerweise: Erstelle insgesamt 30 Fragen: 10 Fragen pro Schwierigkeitsgrad.
+    aus testzwecken jedoch nur 5 insgesamt, zu welchen skill level oder taxonomy ist egal
+    Bitte nur mit JSON-Inhalt antworten in dem folgenden Format:
+    [
+        {{"skill_level": 1, "questions": [
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."}},
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "explanation": "...", "taxonomy": "..."}}
+        ]}},
+        {{"skill_level": 4, "questions": [
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "...", "taxonomy": "..."}}
+        ]}},
+        {{"skill_level": 8, "questions": [
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "...", "taxonomy": "..."}}
+        ]}}
+    ]
+    """
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7
-    )
+    # OpenAI API-Endpunkt und Header
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
 
-    generated_content = response.choices[0].message['content']
-
-    question_data = json.loads(generated_content)  # Falls das Ergebnis JSON ist
+    # Anfrage-Daten
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
 
     try:
-        conn = get_db_connection()
+        # HTTP POST-Anfrage an die OpenAI API
+        response = requests.post(url, headers=headers, json=data)
+
+        # Antwort prüfen
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
+
+            # JSON aus der Antwort extrahieren
+            try:
+                json_start = generated_content.index('[')  # Suche den Beginn der JSON-Liste
+                json_end = generated_content.rindex(']')  # Suche das Ende der JSON-Liste
+                json_content = generated_content[json_start:json_end + 1]
+                question_data = json.loads(json_content)  # JSON-Daten parsen
+            except (ValueError, json.JSONDecodeError) as e:
+                return f"Fehler beim Parsen der JSON-Antwort: {str(e)}", 500
+        else:
+            print(f"Fehler: {response.status_code} - {response.text}")
+            return None
+    
+
         cursor = conn.execute(
             'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
             (class_id, description, title, datetime.now().date())

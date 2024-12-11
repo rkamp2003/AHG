@@ -31,7 +31,7 @@
         {% for homework in homework_list %}
             <li>
                 <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
-                    {{ homework['description'] }} (Erstellt am: {{ homework['date_created'] }})
+                    {{ homework['title'] }} (Erstellt am: {{ homework['date_created'] }})
                 </a>
             </li>
         {% endfor %}
