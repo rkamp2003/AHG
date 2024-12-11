@@ -348,8 +348,8 @@ def leave_class():
 ### Hausaufgabenerstellung ###
 
 
-@app.route('/create_homework', methods=['POST'])
-def create_homework():
+#@app.route('/create_homework', methods=['POST'])
+#def create_homework():
     import json
     from datetime import datetime
 
@@ -460,8 +460,8 @@ def create_homework():
 
     return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session.get('teacher_id')))
 
-#@app.route('/create_homework', methods=['POST'])
-#def create_homework():
+@app.route('/create_homework', methods=['POST'])
+def create_homework():
     import json
     from datetime import datetime
 
