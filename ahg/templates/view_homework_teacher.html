@@ -1,4 +1,4 @@
-<<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
@@ -6,14 +6,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="top-buttons" style="display: flex; justify-content: space-between;">
+    <div class="top-buttons" style="display: flex; justify-content: space-between; align-items: center;">
         <a href="/class_details_teacher/{{ class_info['id'] }}/{{ teacher_id }}" class="button">Zurück zur Klasse</a>
 
         <form action="/delete_homework" method="post" style="display:inline;" onsubmit="return confirm('Möchten Sie diese Hausaufgabe wirklich löschen?')">
             <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
             <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
             <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
-            <button type="submit" class="button danger">Hausaufgabe löschen</button>
+            <button type="submit" class="submit-button danger no-background">Hausaufgabe löschen</button>
         </form>
     </div>
 

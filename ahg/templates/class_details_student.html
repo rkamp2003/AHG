@@ -28,7 +28,7 @@
         {% for homework in homework_list %}
             <li>
                 <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
-                    {{ homework['title'] }} ({{ homework['status'] }})
+                    {{ homework['title'] }} - aufbekommen am: {{ homework['date_created'] }} - ({{ homework['status'] }})
                 </a>
                 {% if homework['status'] == "Erledigt" %}
                     <span class="completed">✔️</span>
