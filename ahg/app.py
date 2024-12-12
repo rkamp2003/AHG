@@ -123,7 +123,7 @@ def class_details_teacher(class_id, teacher_id):
 
     # Liste der Schüler abrufen
     students = conn.execute(
-        'SELECT Participants.name, Participants.skill_level '
+        'SELECT Participants.name, Participants.skill_level, Participants.id '
         'FROM Participants '
         'JOIN ClassMembers ON Participants.id = ClassMembers.student_id '
         'WHERE ClassMembers.class_id = ?', (class_id,)
@@ -184,6 +184,64 @@ def delete_class():
 
     # Weiterleitung zurück zum Lehrer-Dashboard
     return redirect(url_for('teacher_dashboard'))
+
+
+@app.route('/student_details/<int:student_id>/<int:class_id>/<int:teacher_id>')
+def student_details(student_id, class_id, teacher_id):
+    conn = get_db_connection()
+
+    # Hole Schülerinformationen
+    student_info = conn.execute(
+        'SELECT id, name, email, skill_level FROM Participants WHERE id = ?',
+        (student_id,)
+    ).fetchone()
+
+    if not student_info:
+        conn.close()
+        return "Fehler: Schüler existiert nicht.", 404
+
+    # Hausaufgabenergebnisse und Datum abrufen
+    homework_results = conn.execute(
+        '''SELECT Homework.title, Homework.date_created, HomeworkResults.correct_count
+           FROM HomeworkResults
+           JOIN Homework ON HomeworkResults.homework_id = Homework.id
+           WHERE HomeworkResults.student_id = ?
+           ORDER BY Homework.date_created''',
+        (student_id,)
+    ).fetchall()
+
+    conn.close()
+
+    # Daten für den Zeitreihenplot vorbereiten
+    # Konvertiere das Feld `date_created` beim Abrufen
+    dates = []
+    for result in homework_results:
+        try:
+            # Falls das Feld als String vorliegt
+            date_created = datetime.strptime(result['date_created'], '%Y-%m-%d')
+        except (ValueError, TypeError):
+            # Falls das Feld bereits ein datetime-Objekt ist
+            date_created = result['date_created']
+        dates.append(date_created.strftime('%Y-%m-%d'))
+    correct_counts = [result['correct_count'] for result in homework_results]
+
+    # Durchschnitt berechnen
+    mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
+
+    # Füge eine Liste der Titel hinzu
+    titles = [result['title'] for result in homework_results]
+
+    return render_template(
+        'student_details.html',
+        student_info=student_info,
+        class_id=class_id,
+        teacher_id=teacher_id,
+        dates=dates,
+        titles=titles,
+        correct_counts=correct_counts,
+        mean_correct=mean_correct
+    )
+
 
 
 ### STUDENT ###
@@ -282,7 +340,7 @@ def join_class():
 @app.route('/class_details_student/<int:class_id>/<int:student_id>')
 def class_details_student(class_id, student_id):
     conn = get_db_connection()
-    
+
     # Informationen zur Klasse und zum Lehrer abrufen
     class_info = conn.execute(
         'SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name '
@@ -293,7 +351,7 @@ def class_details_student(class_id, student_id):
 
     # Informationen zum Schüler abrufen
     student = conn.execute(
-        'SELECT Participants.name, Participants.skill_level '
+        'SELECT Participants.name, Participants.skill_level, Participants.email '
         'FROM Participants '
         'WHERE Participants.id = ?', (student_id,)
     ).fetchone()
@@ -304,6 +362,33 @@ def class_details_student(class_id, student_id):
         (class_id,)
     ).fetchall()
 
+    # Statistiken des Schülers abrufen
+    homework_results = conn.execute(
+        '''
+        SELECT Homework.date_created, Homework.title, HomeworkResults.correct_count
+        FROM HomeworkResults
+        JOIN Homework ON Homework.id = HomeworkResults.homework_id
+        WHERE HomeworkResults.student_id = ?
+        ORDER BY Homework.date_created ASC
+        ''', (student_id,)
+    ).fetchall()
+
+    # Konvertiere das Feld `date_created` beim Abrufen
+    dates = []
+    for result in homework_results:
+        try:
+            # Falls das Feld als String vorliegt
+            date_created = datetime.strptime(result['date_created'], '%Y-%m-%d')
+        except (ValueError, TypeError):
+            # Falls das Feld bereits ein datetime-Objekt ist
+            date_created = result['date_created']
+        dates.append(date_created.strftime('%Y-%m-%d'))
+    titles = [result['title'] for result in homework_results]
+    correct_counts = [result['correct_count'] for result in homework_results]
+
+    # Durchschnittliche richtige Antworten pro Hausaufgabe
+    mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
+
     conn.close()
 
     return render_template(
@@ -311,8 +396,13 @@ def class_details_student(class_id, student_id):
         class_info=class_info,
         student=student,
         student_id=student_id,
-        homework_list=homework_list
+        homework_list=homework_list,
+        dates=dates,
+        titles=titles,
+        correct_counts=correct_counts,
+        mean_correct=mean_correct
     )
+
 
 
 @app.route('/leave_class', methods=['POST'])
@@ -344,12 +434,11 @@ def leave_class():
     return redirect(url_for('student_dashboard'))
 
 
-
 ### Hausaufgabenerstellung ###
 
 
-#@app.route('/create_homework', methods=['POST'])
-#def create_homework():
+@app.route('/create_homework', methods=['POST'])
+def create_homework():
     import json
     from datetime import datetime
 
@@ -380,8 +469,7 @@ def leave_class():
     Die Hausaufgabe sollte ausschließlich Multiple-Choice-Fragen enthalten. 
     Jede Frage sollte vier Antwortmöglichkeiten haben und die richtige Antwort sollte als Index (0-basiert) zurückgegeben werden.
 
-    normalerweise: Erstelle insgesamt 30 Fragen: 10 Fragen pro Schwierigkeitsgrad.
-    aus testzwecken jedoch nur 5 insgesamt, zu welchen skill level oder taxonomy ist egal
+    Erstelle insgesamt 30 Fragen: 10 Fragen pro Schwierigkeitsgrad.
     Bitte nur mit JSON-Inhalt antworten in dem folgenden Format:
     [
         {{"skill_level": 1, "questions": [
@@ -406,7 +494,7 @@ def leave_class():
 
     # Anfrage-Daten
     data = {
-        "model": "gpt-4o-mini",
+        "model": "gpt-4o",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7
     }
@@ -460,8 +548,8 @@ def leave_class():
 
     return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session.get('teacher_id')))
 
-@app.route('/create_homework', methods=['POST'])
-def create_homework():
+#@app.route('/create_homework', methods=['POST'])
+#def create_homework():
     import json
     from datetime import datetime
 
@@ -861,6 +949,30 @@ def delete_homework():
     conn.close()
 
     return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=teacher_id))
+
+
+@app.route('/submit_homework', methods=['POST'])
+def submit_homework():
+    import json
+
+    data = request.get_json()
+    homework_id = data.get('homework_id')
+    student_id = data.get('student_id')
+    correct_count = data.get('correct_count')
+    incorrect_count = data.get('incorrect_count')
+
+    try:
+        conn = get_db_connection()
+        conn.execute(
+            '''INSERT INTO HomeworkResults (homework_id, student_id, correct_count, incorrect_count)
+               VALUES (?, ?, ?, ?)''',
+            (homework_id, student_id, correct_count, incorrect_count)
+        )
+        conn.commit()
+        conn.close()
+        return "Ergebnisse erfolgreich gespeichert", 200
+    except Exception as e:
+        return f"Ein Fehler ist aufgetreten: {str(e)}", 500
 
 
 if __name__ == '__main__':

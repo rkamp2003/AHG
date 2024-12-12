@@ -2,57 +2,36 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Klassendetails (Schüleransicht)</title>
+    <title>Schülerdetails</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="top-buttons">
-        <a href="/student_dashboard" class="button">Dashboard</a>
+    <div class="top-buttons" style="display: flex; justify-content: flex-start;">
+        <a href="/class_details_teacher/{{ class_id }}/{{ teacher_id }}" class="button">Zurück zur Klasse</a>
     </div>
-    
-    <h1>{{ class_info['class_name'] }}</h1>
-    <h2>Fach: {{ class_info['subject'] }}</h2>
-    <h3>Lehrer: {{ class_info['teacher_name'] }}</h3>
 
-    <h3>Ihre Informationen:</h3>
+    <h1>{{ student_info['name'] }}</h1>
+    <h3>Informationen:</h3>
     <ul class="info-list">
-        <li>Name: {{ student['name'] }}</li>
-        <li>Email: {{ student['email'] }}</li>
-        <li>Skill Level: {{ student['skill_level'] }}</li>
-        <li>Durchschnitt richtiger Antworten pro Hausaufgabe: {{ mean_correct }}</li>
+        <li>Email: {{ student_info['email'] }}</li>
+        <li>Skill Level: {{ student_info['skill_level'] }}</li>
+        <li> Durchschnitt richtiger Antworten pro Hausaufgabe: {{ mean_correct }}</li>
     </ul>
 
-    <h3>Hausaufgaben</h3>
-    <ul class="class-list">
-        {% for homework in homework_list %}
-            <li>
-                <a href="/homework/{{ homework['id'] }}/{{ student_id }}"> 
-                    {{ homework['title'] }} (Aufbekommen am: {{ homework['date_created'] }})</a>
-            </li>
-        {% endfor %}
-    </ul>
-
-    <h3>Fortschritt über die Zeit</h3>
+    <h2>Fortschritt über die Zeit</h2>
     <div class="chart-container">
         <canvas id="progressChart"></canvas>
     </div>
 
-    <!-- Button zum Verlassen der Klasse -->
-    <form action="/leave_class" method="post">
-        <input type="hidden" name="student_id" value="{{ student_id }}">
-        <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
-        <button type="submit" class="submit-button danger">Kurs verlassen</button>
-    </form>
-
     <script>
         const ctx = document.getElementById('progressChart').getContext('2d');
         const data = {
-            labels: {{ dates | tojson }},
+            labels: {{ dates | tojson }}, // X-Achse: Datum
             datasets: [
                 {
                     label: 'Richtige Antworten',
-                    data: {{ correct_counts | tojson }},
+                    data: {{ correct_counts | tojson }}, // Y-Achse: Richtige Antworten
                     borderColor: 'rgba(75, 192, 192, 1)',
                     backgroundColor: 'rgba(75, 192, 192, 0.2)',
                     borderWidth: 2,
@@ -63,7 +42,8 @@
                 }
             ]
         };
-
+    
+        // Tooltips erweitern, um Titel anzuzeigen
         const config = {
             type: 'line',
             data: data,
@@ -88,6 +68,7 @@
                     tooltip: {
                         callbacks: {
                             label: function(tooltipItem) {
+                                // Füge Titel der Hausaufgabe zum Tooltip hinzu
                                 const title = {{ titles | tojson }}[tooltipItem.dataIndex];
                                 const correctAnswers = tooltipItem.raw;
                                 return `${title}: ${correctAnswers} richtige Antworten`;
@@ -129,8 +110,9 @@
                 }
             }
         };
-
+    
         new Chart(ctx, config);
-    </script>
+    </script>    
+</div>
 </body>
 </html>

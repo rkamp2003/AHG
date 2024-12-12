@@ -22,8 +22,12 @@
     <h3>Schüler in dieser Klasse:</h3>
     <ul class="student-list">
         {% for student in students %}
-            <li>{{ student['name'] }} (Skill Level: {{ student['skill_level'] }})</li>
-        {% endfor %}
+        <li>
+            <a href="/student_details/{{ student['id'] }}/{{ class_info['id'] }}/{{ teacher_id }}">
+                {{ student['name'] }} (Skill Level: {{ student['skill_level'] }})
+            </a>
+        </li>
+    {% endfor %}
     </ul>
 
     <h3>Hausaufgaben:</h3>

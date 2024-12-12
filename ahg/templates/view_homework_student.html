@@ -14,10 +14,7 @@
     <h3>{{ class_info.class_name }} - {{ class_info.subject }} (Lehrer: {{ class_info.teacher_name }})</h3>
     <p>Erstellt am: {{ homework['date_created'] }}</p>
 
-    <form id="homework-form" action="/submit_homework" method="post">
-        <input type="hidden" name="student_id" value="{{ student_id }}">
-        <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
-
+    <form id="homework-form">
         <ol>
             {% for question in questions %}
                 <li>
@@ -37,7 +34,8 @@
             {% endfor %}
         </ol>
 
-        <button type="button" onclick="checkAnswers()">Überprüfen</button>
+        <button id="check-button" type="button" onclick="checkAnswers()">Überprüfen</button>
+        <button id="submit-button" type="button" style="display: none;" onclick="submitHomework()">Abschicken</button>
     </form>
 
     <script>
@@ -49,6 +47,8 @@
             const form = document.getElementById('homework-form');
             const elements = form.elements;
             const checkedAnswers = {};
+            let correctCount = 0;
+            let incorrectCount = 0;
 
             for (let el of elements) {
                 if (el.type === "radio" && el.checked) {
@@ -65,19 +65,48 @@
                 if (userAnswer === undefined) {
                     const correctText = questions[questionIndex].options[correctAnswer].option;
                     resultSpan.innerText = `❌ Falsch! Keine Antwort ausgewählt. Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
-                    resultSpan.classList.add('incorrect');
-                    resultSpan.classList.remove('correct');
+                    incorrectCount++;
                 } else if (userAnswer === correctAnswer) {
                     resultSpan.innerText = '✔️ Richtig!';
-                    resultSpan.classList.add('correct');
-                    resultSpan.classList.remove('incorrect');
+                    correctCount++;
                 } else {
                     const correctText = questions[questionIndex].options[correctAnswer].option;
                     resultSpan.innerText = `❌ Falsch! Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
-                    resultSpan.classList.add('incorrect');
-                    resultSpan.classList.remove('correct');
+                    incorrectCount++;
                 }
             }
+
+            // Button zum Abschicken anzeigen
+            document.getElementById('check-button').style.display = 'none';
+            document.getElementById('submit-button').style.display = 'inline-block';
+
+            // Ergebnisse für Abschicken speichern
+            window.homeworkResults = { correctCount, incorrectCount };
+        }
+
+        function submitHomework() {
+            const results = window.homeworkResults;
+
+            fetch('/submit_homework', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    homework_id: {{ homework['id'] }},
+                    student_id: {{ student_id }},
+                    correct_count: results.correctCount,
+                    incorrect_count: results.incorrectCount
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    alert('Hausaufgabe erfolgreich abgeschickt!');
+                    window.location.href = `/class_details_student/{{ class_info['id'] }}/{{ student_id }}`;
+                } else {
+                    alert('Fehler beim Abschicken der Hausaufgabe.');
+                }
+            });
         }
     </script>
 </body>

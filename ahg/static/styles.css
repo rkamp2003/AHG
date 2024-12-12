@@ -224,3 +224,43 @@ p {
     font-size: 1.1em;
     text-align: center;
 }
+
+.chart-container {
+    position: relative;
+    max-width: 800px;
+    margin: 20px auto;
+    height: 400px; /* Höhe des Graphen */
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    background-color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+}
+
+.stats {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 15px;
+    background-color: #eef2f7;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-size: 1.2em;
+    text-align: center;
+}
+
+.stats strong {
+    color: #4a4a8e;
+    font-size: 1.3em;
+}
+
+h2 {
+    margin-top: 30px;
+    font-size: 1.8em;
+    color: #4a4a8e;
+    text-align: center;
+}
+
+canvas {
+    max-width: 100%;
+    height: auto;
+}
