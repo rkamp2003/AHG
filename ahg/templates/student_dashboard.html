@@ -11,6 +11,14 @@
     </div>
 
     <h1>Willkommen, {{ student['name'] }}</h1>
+
+    <h3>Ihre Informationen:</h3>
+    <ul class="info-list">
+        <li>Name: {{ student['name'] }}</li>
+        <li>Email: {{ student['email'] }}</li>
+        <li>Skill Level : {{ student['skill_level'] }}</li>
+    </ul>
+
     <h2>Ihre Kurse:</h2>
     <ul class="class-list">
         {% for class in joined_classes %}

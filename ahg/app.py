@@ -18,8 +18,6 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-conn = get_db_connection()
-
 ### HOMEPAGE ###
 
 @app.route('/')
@@ -123,10 +121,12 @@ def class_details_teacher(class_id, teacher_id):
 
     # Liste der Schüler abrufen
     students = conn.execute(
-        'SELECT Participants.name, Participants.skill_level, Participants.id '
-        'FROM Participants '
-        'JOIN ClassMembers ON Participants.id = ClassMembers.student_id '
-        'WHERE ClassMembers.class_id = ?', (class_id,)
+        '''
+        SELECT Participants.id, Participants.name, ClassMembers.class_skill_level
+        FROM Participants
+        JOIN ClassMembers ON Participants.id = ClassMembers.student_id
+        WHERE ClassMembers.class_id = ?
+        ''', (class_id,)
     ).fetchall()
 
     # Hausaufgaben der Klasse abrufen
@@ -202,27 +202,30 @@ def student_details(student_id, class_id, teacher_id):
 
     # Hausaufgabenergebnisse und Datum abrufen
     homework_results = conn.execute(
-        '''SELECT Homework.title, Homework.date_created, HomeworkResults.correct_count
-           FROM HomeworkResults
-           JOIN Homework ON HomeworkResults.homework_id = Homework.id
-           WHERE HomeworkResults.student_id = ?
-           ORDER BY Homework.date_created''',
-        (student_id,)
+        '''
+        SELECT 
+            HomeworkResults.correct_count, 
+            HomeworkResults.date_submitted,
+            Homework.title
+        FROM HomeworkResults
+        JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
+        ORDER BY HomeworkResults.date_submitted ASC
+        ''',
+        (student_id, class_id)
     ).fetchall()
 
-    conn.close()
-
     # Daten für den Zeitreihenplot vorbereiten
-    # Konvertiere das Feld `date_created` beim Abrufen
+    # Konvertiere das Feld `date_submitted` beim Abrufen
     dates = []
     for result in homework_results:
         try:
             # Falls das Feld als String vorliegt
-            date_created = datetime.strptime(result['date_created'], '%Y-%m-%d')
+            date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
         except (ValueError, TypeError):
             # Falls das Feld bereits ein datetime-Objekt ist
-            date_created = result['date_created']
-        dates.append(date_created.strftime('%Y-%m-%d'))
+            date_submitted = result['date_submitted']
+        dates.append(date_submitted.strftime('%Y-%m-%d'))
     correct_counts = [result['correct_count'] for result in homework_results]
 
     # Durchschnitt berechnen
@@ -230,6 +233,8 @@ def student_details(student_id, class_id, teacher_id):
 
     # Füge eine Liste der Titel hinzu
     titles = [result['title'] for result in homework_results]
+
+    conn.close()
 
     return render_template(
         'student_details.html',
@@ -329,12 +334,26 @@ def join_class():
     if existing_member:
         conn.close()
         return "Sie sind bereits Mitglied dieser Klasse."
+    
+    # Gesamtskill-Level des Schülers abrufen
+    skill_level = conn.execute(
+        'SELECT skill_level FROM Participants WHERE id = ?',
+        (student_id,)
+    ).fetchone()['skill_level']
 
-    conn.execute('INSERT INTO ClassMembers (class_id, student_id) VALUES (?, ?)', (class_id, student_id))
+    # Schüler der Klasse hinzufügen und das Klassenskill-Level setzen
+    conn.execute(
+        '''
+        INSERT INTO ClassMembers (class_id, student_id, class_skill_level)
+        VALUES (?, ?, ?)
+        ''',
+        (class_id, student_id, skill_level)
+    )
+
     conn.commit()
     conn.close()
 
-    return redirect(url_for('student_dashboard', student_id=student_id))
+    return redirect(url_for('class_details_student', class_id=class_id, student_id=student_id))
 
 
 @app.route('/class_details_student/<int:class_id>/<int:student_id>')
@@ -351,38 +370,54 @@ def class_details_student(class_id, student_id):
 
     # Informationen zum Schüler abrufen
     student = conn.execute(
-        'SELECT Participants.name, Participants.skill_level, Participants.email '
-        'FROM Participants '
-        'WHERE Participants.id = ?', (student_id,)
+        '''
+        SELECT Participants.name, Participants.email, ClassMembers.class_skill_level
+        FROM Participants
+        JOIN ClassMembers ON Participants.id = ClassMembers.student_id
+        WHERE Participants.id = ? AND ClassMembers.class_id = ?
+        ''', (student_id, class_id)
     ).fetchone()
 
     # Hausaufgaben der Klasse abrufen
     homework_list = conn.execute(
-        'SELECT id, date_created, title FROM Homework WHERE class_id = ?',
-        (class_id,)
+        '''
+        SELECT 
+            Homework.id, 
+            Homework.title, 
+            Homework.date_created, 
+            CASE WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Erledigt' ELSE 'Offen' END AS status
+        FROM Homework
+        LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id AND HomeworkResults.student_id = ?
+        WHERE Homework.class_id = ?
+        ''',
+        (student_id, class_id)
     ).fetchall()
 
-    # Statistiken des Schülers abrufen
+    # Informationen zu den Ergebnissen dieser Klasse abrufen
     homework_results = conn.execute(
         '''
-        SELECT Homework.date_created, Homework.title, HomeworkResults.correct_count
+        SELECT 
+            HomeworkResults.correct_count, 
+            HomeworkResults.date_submitted,
+            Homework.title
         FROM HomeworkResults
-        JOIN Homework ON Homework.id = HomeworkResults.homework_id
-        WHERE HomeworkResults.student_id = ?
-        ORDER BY Homework.date_created ASC
-        ''', (student_id,)
+        JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
+        ORDER BY HomeworkResults.date_submitted ASC
+        ''',
+        (student_id, class_id)
     ).fetchall()
 
-    # Konvertiere das Feld `date_created` beim Abrufen
+    # Konvertiere das Feld `date_submitted` beim Abrufen
     dates = []
     for result in homework_results:
         try:
             # Falls das Feld als String vorliegt
-            date_created = datetime.strptime(result['date_created'], '%Y-%m-%d')
+            date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
         except (ValueError, TypeError):
             # Falls das Feld bereits ein datetime-Objekt ist
-            date_created = result['date_created']
-        dates.append(date_created.strftime('%Y-%m-%d'))
+            date_submitted = result['date_submitted']
+        dates.append(date_submitted.strftime('%Y-%m-%d'))
     titles = [result['title'] for result in homework_results]
     correct_counts = [result['correct_count'] for result in homework_results]
 
@@ -836,9 +871,9 @@ def view_homework_student(homework_id, student_id):
 
     # Abrufen des Skill-Levels des Schülers
     student = conn.execute(
-        'SELECT skill_level FROM Participants WHERE id = ?', (student_id,)
+        'SELECT class_skill_level FROM ClassMembers WHERE student_id = ?', (student_id,)
     ).fetchone()
-    student_skill_level = student['skill_level'] if student else 0
+    student_skill_level = student['class_skill_level'] if student else 0
 
     # Skill-Level-Bereich definieren
     if student_skill_level <= 3:
@@ -953,7 +988,8 @@ def delete_homework():
 
 @app.route('/submit_homework', methods=['POST'])
 def submit_homework():
-    import json
+    from datetime import datetime
+    conn = get_db_connection()
 
     data = request.get_json()
     homework_id = data.get('homework_id')
@@ -961,18 +997,24 @@ def submit_homework():
     correct_count = data.get('correct_count')
     incorrect_count = data.get('incorrect_count')
 
+    # Datum der Abgabe speichern
+    date_submitted = datetime.now().date()
+
     try:
-        conn = get_db_connection()
+        # Ergebnis in der Datenbank speichern
         conn.execute(
-            '''INSERT INTO HomeworkResults (homework_id, student_id, correct_count, incorrect_count)
-               VALUES (?, ?, ?, ?)''',
-            (homework_id, student_id, correct_count, incorrect_count)
+            '''
+            INSERT INTO HomeworkResults (homework_id, student_id, correct_count, incorrect_count, date_submitted)
+            VALUES (?, ?, ?, ?, ?)
+            ''',
+            (homework_id, student_id, correct_count, incorrect_count, date_submitted)
         )
+
         conn.commit()
         conn.close()
         return "Ergebnisse erfolgreich gespeichert", 200
     except Exception as e:
-        return f"Ein Fehler ist aufgetreten: {str(e)}", 500
+        return f"Ein Fehler ist aufgetreten: {str(e)}", 500    
 
 
 if __name__ == '__main__':

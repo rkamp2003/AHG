@@ -24,7 +24,7 @@
         {% for student in students %}
         <li>
             <a href="/student_details/{{ student['id'] }}/{{ class_info['id'] }}/{{ teacher_id }}">
-                {{ student['name'] }} (Skill Level: {{ student['skill_level'] }})
+                {{ student['name'] }} (Skill Level (Klasse): {{ student['class_skill_level'] }})
             </a>
         </li>
     {% endfor %}

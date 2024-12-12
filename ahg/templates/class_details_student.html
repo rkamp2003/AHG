@@ -19,7 +19,7 @@
     <ul class="info-list">
         <li>Name: {{ student['name'] }}</li>
         <li>Email: {{ student['email'] }}</li>
-        <li>Skill Level: {{ student['skill_level'] }}</li>
+        <li>Skill Level (Klasse): {{ student['class_skill_level'] }}</li>
         <li>Durchschnitt richtiger Antworten pro Hausaufgabe: {{ mean_correct }}</li>
     </ul>
 
@@ -27,11 +27,18 @@
     <ul class="class-list">
         {% for homework in homework_list %}
             <li>
-                <a href="/homework/{{ homework['id'] }}/{{ student_id }}"> 
-                    {{ homework['title'] }} (Aufbekommen am: {{ homework['date_created'] }})</a>
+                <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
+                    {{ homework['title'] }} ({{ homework['status'] }})
+                </a>
+                {% if homework['status'] == "Erledigt" %}
+                    <span class="completed">✔️</span>
+                {% else %}
+                    <span class="pending">❌</span>
+                {% endif %}
             </li>
         {% endfor %}
     </ul>
+
 
     <h3>Fortschritt über die Zeit</h3>
     <div class="chart-container">
@@ -59,10 +66,20 @@
                     fill: true,
                     tension: 0.2,
                     pointRadius: 5,
-                    pointHoverRadius: 7
+                    pointHoverRadius: 7,
+                    pointStyle: 'circle',
+                    tooltips: {
+                        callbacks: {
+                            title: (tooltipItems) => {
+                                const index = tooltipItems[0].index;
+                                return {{ titles | tojson }}[index];
+                            }
+                        }
+                    }
                 }
             ]
         };
+
 
         const config = {
             type: 'line',
