@@ -11,7 +11,7 @@
         <form action="/delete_class" method="post" onsubmit="return confirm('Möchten Sie diesen Kurs wirklich löschen? Alle zugehörigen Daten werden entfernt.')">
             <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
             <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
-            <button type="submit" class="submit-button danger no-background">Kurs löschen</button>
+            <button type="submit" class="submit-button danger">Kurs löschen</button>
         </form>
     </div>
 
@@ -22,8 +22,12 @@
     <h3>Schüler in dieser Klasse:</h3>
     <ul class="student-list">
         {% for student in students %}
-            <li>{{ student['name'] }} (Skill Level: {{ student['skill_level'] }})</li>
-        {% endfor %}
+        <li>
+            <a href="/student_details/{{ student['id'] }}/{{ class_info['id'] }}/{{ teacher_id }}">
+                {{ student['name'] }} (Skill Level (Klasse): {{ student['class_skill_level'] }})
+            </a>
+        </li>
+    {% endfor %}
     </ul>
 
     <h3>Hausaufgaben:</h3>
@@ -31,7 +35,7 @@
         {% for homework in homework_list %}
             <li>
                 <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
-                    {{ homework['description'] }} (Erstellt am: {{ homework['date_created'] }})
+                    {{ homework['title'] }} (Erstellt am: {{ homework['date_created'] }})
                 </a>
             </li>
         {% endfor %}

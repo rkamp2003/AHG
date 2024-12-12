@@ -2,13 +2,10 @@ from flask import Flask, render_template, request, redirect, url_for, session
 import sqlite3
 import json
 from datetime import datetime
-import openai  # ChatGPT API
+from openai  import OpenAI# ChatGPT API
 import os
-
-openai.api_key = os.getenv("TEST")
-test = os.getenv("TEST")
-
-print(test)
+import openai
+import requests
 
 
 app = Flask(__name__)
@@ -20,8 +17,6 @@ def get_db_connection():
     conn = sqlite3.connect('ahg/database.db')
     conn.row_factory = sqlite3.Row
     return conn
-
-conn = get_db_connection()
 
 ### HOMEPAGE ###
 
@@ -126,15 +121,17 @@ def class_details_teacher(class_id, teacher_id):
 
     # Liste der Schüler abrufen
     students = conn.execute(
-        'SELECT Participants.name, Participants.skill_level '
-        'FROM Participants '
-        'JOIN ClassMembers ON Participants.id = ClassMembers.student_id '
-        'WHERE ClassMembers.class_id = ?', (class_id,)
+        '''
+        SELECT Participants.id, Participants.name, ClassMembers.class_skill_level
+        FROM Participants
+        JOIN ClassMembers ON Participants.id = ClassMembers.student_id
+        WHERE ClassMembers.class_id = ?
+        ''', (class_id,)
     ).fetchall()
 
     # Hausaufgaben der Klasse abrufen
     homework_list = conn.execute(
-        'SELECT id, description, date_created FROM Homework WHERE class_id = ?',
+        'SELECT id, description, title,  date_created FROM Homework WHERE class_id = ?',
         (class_id,)
     ).fetchall()
 
@@ -187,6 +184,69 @@ def delete_class():
 
     # Weiterleitung zurück zum Lehrer-Dashboard
     return redirect(url_for('teacher_dashboard'))
+
+
+@app.route('/student_details/<int:student_id>/<int:class_id>/<int:teacher_id>')
+def student_details(student_id, class_id, teacher_id):
+    conn = get_db_connection()
+
+    # Hole Schülerinformationen
+    student_info = conn.execute(
+        'SELECT id, name, email, skill_level FROM Participants WHERE id = ?',
+        (student_id,)
+    ).fetchone()
+
+    if not student_info:
+        conn.close()
+        return "Fehler: Schüler existiert nicht.", 404
+
+    # Hausaufgabenergebnisse und Datum abrufen
+    homework_results = conn.execute(
+        '''
+        SELECT 
+            HomeworkResults.correct_count, 
+            HomeworkResults.date_submitted,
+            Homework.title
+        FROM HomeworkResults
+        JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
+        ORDER BY HomeworkResults.date_submitted ASC
+        ''',
+        (student_id, class_id)
+    ).fetchall()
+
+    # Daten für den Zeitreihenplot vorbereiten
+    # Konvertiere das Feld `date_submitted` beim Abrufen
+    dates = []
+    for result in homework_results:
+        try:
+            # Falls das Feld als String vorliegt
+            date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
+        except (ValueError, TypeError):
+            # Falls das Feld bereits ein datetime-Objekt ist
+            date_submitted = result['date_submitted']
+        dates.append(date_submitted.strftime('%Y-%m-%d'))
+    correct_counts = [result['correct_count'] for result in homework_results]
+
+    # Durchschnitt berechnen
+    mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
+
+    # Füge eine Liste der Titel hinzu
+    titles = [result['title'] for result in homework_results]
+
+    conn.close()
+
+    return render_template(
+        'student_details.html',
+        student_info=student_info,
+        class_id=class_id,
+        teacher_id=teacher_id,
+        dates=dates,
+        titles=titles,
+        correct_counts=correct_counts,
+        mean_correct=mean_correct
+    )
+
 
 
 ### STUDENT ###
@@ -274,18 +334,32 @@ def join_class():
     if existing_member:
         conn.close()
         return "Sie sind bereits Mitglied dieser Klasse."
+    
+    # Gesamtskill-Level des Schülers abrufen
+    skill_level = conn.execute(
+        'SELECT skill_level FROM Participants WHERE id = ?',
+        (student_id,)
+    ).fetchone()['skill_level']
 
-    conn.execute('INSERT INTO ClassMembers (class_id, student_id) VALUES (?, ?)', (class_id, student_id))
+    # Schüler der Klasse hinzufügen und das Klassenskill-Level setzen
+    conn.execute(
+        '''
+        INSERT INTO ClassMembers (class_id, student_id, class_skill_level)
+        VALUES (?, ?, ?)
+        ''',
+        (class_id, student_id, skill_level)
+    )
+
     conn.commit()
     conn.close()
 
-    return redirect(url_for('student_dashboard', student_id=student_id))
+    return redirect(url_for('class_details_student', class_id=class_id, student_id=student_id))
 
 
 @app.route('/class_details_student/<int:class_id>/<int:student_id>')
 def class_details_student(class_id, student_id):
     conn = get_db_connection()
-    
+
     # Informationen zur Klasse und zum Lehrer abrufen
     class_info = conn.execute(
         'SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name '
@@ -296,16 +370,59 @@ def class_details_student(class_id, student_id):
 
     # Informationen zum Schüler abrufen
     student = conn.execute(
-        'SELECT Participants.name, Participants.skill_level '
-        'FROM Participants '
-        'WHERE Participants.id = ?', (student_id,)
+        '''
+        SELECT Participants.name, Participants.email, ClassMembers.class_skill_level
+        FROM Participants
+        JOIN ClassMembers ON Participants.id = ClassMembers.student_id
+        WHERE Participants.id = ? AND ClassMembers.class_id = ?
+        ''', (student_id, class_id)
     ).fetchone()
 
     # Hausaufgaben der Klasse abrufen
     homework_list = conn.execute(
-        'SELECT id, description, date_created FROM Homework WHERE class_id = ?',
-        (class_id,)
+        '''
+        SELECT 
+            Homework.id, 
+            Homework.title, 
+            Homework.date_created, 
+            CASE WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Erledigt' ELSE 'Offen' END AS status
+        FROM Homework
+        LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id AND HomeworkResults.student_id = ?
+        WHERE Homework.class_id = ?
+        ''',
+        (student_id, class_id)
     ).fetchall()
+
+    # Informationen zu den Ergebnissen dieser Klasse abrufen
+    homework_results = conn.execute(
+        '''
+        SELECT 
+            HomeworkResults.correct_count, 
+            HomeworkResults.date_submitted,
+            Homework.title
+        FROM HomeworkResults
+        JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
+        ORDER BY HomeworkResults.date_submitted ASC
+        ''',
+        (student_id, class_id)
+    ).fetchall()
+
+    # Konvertiere das Feld `date_submitted` beim Abrufen
+    dates = []
+    for result in homework_results:
+        try:
+            # Falls das Feld als String vorliegt
+            date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
+        except (ValueError, TypeError):
+            # Falls das Feld bereits ein datetime-Objekt ist
+            date_submitted = result['date_submitted']
+        dates.append(date_submitted.strftime('%Y-%m-%d'))
+    titles = [result['title'] for result in homework_results]
+    correct_counts = [result['correct_count'] for result in homework_results]
+
+    # Durchschnittliche richtige Antworten pro Hausaufgabe
+    mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
 
     conn.close()
 
@@ -314,8 +431,13 @@ def class_details_student(class_id, student_id):
         class_info=class_info,
         student=student,
         student_id=student_id,
-        homework_list=homework_list
+        homework_list=homework_list,
+        dates=dates,
+        titles=titles,
+        correct_counts=correct_counts,
+        mean_correct=mean_correct
     )
+
 
 
 @app.route('/leave_class', methods=['POST'])
@@ -347,18 +469,26 @@ def leave_class():
     return redirect(url_for('student_dashboard'))
 
 
-
 ### Hausaufgabenerstellung ###
 
 
-# @app.route('/create_homework', methods=['POST'])
-# def create_homework():
+@app.route('/create_homework', methods=['POST'])
+def create_homework():
+    import json
+    from datetime import datetime
+
+    api_key = os.getenv("CHATGPT_API_KEY")
+
     class_id = request.form['class_id']
     description = request.form['description']
+    title = request.form['title']
 
-    # Hole Kursinformationen
+    # Hole Klasseninformationen aus der Datenbank
     conn = get_db_connection()
-    class_info = conn.execute('SELECT * FROM Classes WHERE id = ?', (class_id,)).fetchone()
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = ?',
+        (class_id,)
+    ).fetchone()
 
     # Generiere Hausaufgaben mit ChatGPT
     prompt = f"""
@@ -375,62 +505,86 @@ def leave_class():
     Jede Frage sollte vier Antwortmöglichkeiten haben und die richtige Antwort sollte als Index (0-basiert) zurückgegeben werden.
 
     Erstelle insgesamt 30 Fragen: 10 Fragen pro Schwierigkeitsgrad.
-
-    Format:
+    Bitte nur mit JSON-Inhalt antworten in dem folgenden Format:
     [
-        {"skill_level": 1, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."},
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "explanation": "...", "taxonomy": "..."}
-        ]},
-        {"skill_level": 4, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "...", "taxonomy": "..."}
-        ]},
-        {"skill_level": 8, "questions": [
-            {"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "...", "taxonomy": "..."}
-        ]}
+        {{"skill_level": 1, "questions": [
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."}},
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "explanation": "...", "taxonomy": "..."}}
+        ]}},
+        {{"skill_level": 4, "questions": [
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "...", "taxonomy": "..."}}
+        ]}},
+        {{"skill_level": 8, "questions": [
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "...", "taxonomy": "..."}}
+        ]}}
     ]
     """
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    generated_content = response.choices[0].message['content']
 
-    question_data = json.loads(generated_content)  # Falls das Ergebnis JSON ist
+    # OpenAI API-Endpunkt und Header
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
 
-    homework_questions = []
-    for idx, row in enumerate(question_data):
-        question = dict(row)
-        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
-        homework_questions.append(question)
+    # Anfrage-Daten
+    data = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
 
+    try:
+        # HTTP POST-Anfrage an die OpenAI API
+        response = requests.post(url, headers=headers, json=data)
 
-    conn = get_db_connection()
-    cursor = conn.execute(
-        'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
-        (class_id, description, title, datetime.now())
-    )
-    homework_id = cursor.lastrowid
+        # Antwort prüfen
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
 
-    # Speichern der Fragen
-    for question_set in homework_questions:
-        skill_level = question_set['skill_level']
-        for question in question_set['questions']:
-            options = json.dumps(question['options'])
-            conn.execute(
-                '''INSERT INTO HomeworkQuestions
-                   (homework_id, skill_level, question, correct_answer, explanation, question_type, options)
-                   VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?)''',
-                (homework_id, skill_level, question['question'], question['answer'], question['explanation'], options)
-            )
+            # JSON aus der Antwort extrahieren
+            try:
+                json_start = generated_content.index('[')  # Suche den Beginn der JSON-Liste
+                json_end = generated_content.rindex(']')  # Suche das Ende der JSON-Liste
+                json_content = generated_content[json_start:json_end + 1]
+                question_data = json.loads(json_content)  # JSON-Daten parsen
+            except (ValueError, json.JSONDecodeError) as e:
+                return f"Fehler beim Parsen der JSON-Antwort: {str(e)}", 500
+        else:
+            print(f"Fehler: {response.status_code} - {response.text}")
+            return None
+    
 
-    conn.commit()
-    conn.close()
+        cursor = conn.execute(
+            'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
+            (class_id, description, title, datetime.now().date())
+        )
+        homework_id = cursor.lastrowid
 
-    return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session['teacher_id']))
+        # Speichern der Fragen
+        for question_set in question_data:
+            skill_level = question_set["skill_level"]
+            for question in question_set["questions"]:
+                # Speichere die Optionen als einfache Liste im JSON-Format
+                options = json.dumps(question["options"])
+                conn.execute(
+                    '''INSERT INTO HomeworkQuestions
+                       (homework_id, skill_level, question, correct_answer, explanation, question_type, options, taxonomy)
+                       VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?, ?)''',
+                    (homework_id, skill_level, question["question"], question["answer"], question["explanation"], options, question["taxonomy"])
+                )
 
-@app.route('/create_homework', methods=['POST'])
-def create_homework():
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        return f"Ein Fehler ist aufgetreten: {str(e)}", 500
+
+    return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session.get('teacher_id')))
+
+#@app.route('/create_homework', methods=['POST'])
+#def create_homework():
     import json
     from datetime import datetime
 
@@ -444,59 +598,74 @@ def create_homework():
         "skill_level": 1,
         "questions": [
             {
-                "question": "Was beschreibt die Ableitung einer Funktion?",
-                "options": [
-                    "Die Fläche unter der Funktion",
-                    "Die Steigung der Funktion an einem Punkt",
-                    "Den Schnittpunkt mit der y-Achse",
-                    "Die Anzahl der Nullstellen"
-                ],
-                "answer": 1,
-                "explanation": "Die Ableitung beschreibt die Steigung der Funktion an einem bestimmten Punkt."
-            },
-            {
-                "question": "Was ist die Ableitung von f(x) = 2x?",
-                "options": [
-                    "f'(x) = 2",
-                    "f'(x) = x",
-                    "f'(x) = 2x²",
-                    "f'(x) = 1/2x"
-                ],
+                "question": "Was ist die Ableitung von f(x) = 5x?",
+                "options": ["5", "0", "x", "1"],
                 "answer": 0,
-                "explanation": "Die Ableitung von 2x ist 2, da der Exponent von x um 1 reduziert wird."
+                "explanation": "Die Ableitung einer Funktion der Form ax ist a.",
+                "taxonomy": "Remembering"
             },
             {
-                "question": "Welche Funktion hat eine konstante Ableitung von 3?",
-                "options": [
-                    "f(x) = 3x",
-                    "f(x) = x³",
-                    "f(x) = x² + 3",
-                    "f(x) = x + 3"
-                ],
+                "question": "Was ist die Ableitung von f(x) = x^2?",
+                "options": ["2x", "x", "2x^2", "0"],
                 "answer": 0,
-                "explanation": "Die Funktion f(x) = 3x hat eine konstante Ableitung von 3, da die Steigung konstant ist."
+                "explanation": "Die Ableitung von x^n ist n*x^(n-1).",
+                "taxonomy": "Remembering"
             },
             {
-                "question": "Was ist die Ableitung einer konstanten Funktion f(x) = 5?",
-                "options": [
-                    "f'(x) = 5",
-                    "f'(x) = 1",
-                    "f'(x) = 0",
-                    "f'(x) = x"
-                ],
+                "question": "Wie lautet die Ableitungsregel für konstante Funktionen?",
+                "options": ["1", "x", "0", "derselbe Wert"],
                 "answer": 2,
-                "explanation": "Die Ableitung einer konstanten Funktion ist immer 0."
+                "explanation": "Die Ableitung einer konstanten Funktion ist immer 0.",
+                "taxonomy": "Remembering"
             },
             {
-                "question": "Welche Aussage ist wahr über die Ableitung einer linearen Funktion?",
-                "options": [
-                    "Die Ableitung ist immer gleich der Funktion.",
-                    "Die Ableitung ist konstant.",
-                    "Die Ableitung ist immer null.",
-                    "Die Ableitung verändert sich an jedem Punkt."
-                ],
+                "question": "Welche Regel verwendest du, um die Ableitung von f(x) = 3x^3 - 2x zu finden?",
+                "options": ["Produktregel", "Kettenregel", "Quotientenregel", "Potenzregel"],
+                "answer": 3,
+                "explanation": "Hier benutzt man die Potenzregel, weil man Terme in Form von x^n hat.",
+                "taxonomy": "Understanding"
+            },
+            {
+                "question": "Welche Ableitung ergibt sich aus der Funktion f(x) = x^3 + 2x?",
+                "options": ["3x^2 + 2", "3x^2", "2x^2 + 3", "x^3"],
+                "answer": 0,
+                "explanation": "Anwenden der Potenzregel auf jedes Glied ergibt 3x^2 + 2.",
+                "taxonomy": "Understanding"
+            },
+            {
+                "question": "Warum ist die Ableitung einer linearen Funktion konstant?",
+                "options": ["Weil der Anstieg konstant bleibt", "Weil die Funktion immer 0 ist", "Weil x eine Konstante ist", "Weil die Funktion nicht linear ist"],
+                "answer": 0,
+                "explanation": "Der Anstieg einer linearen Funktion ist immer konstant.",
+                "taxonomy": "Understanding"
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = 7x^2.",
+                "options": ["14x", "7x", "14x^2", "0"],
+                "answer": 0,
+                "explanation": "Anwendung der Potenzregel ergibt 2*7*x^(2-1) = 14x.",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Finde die Ableitung von f(x) = 4x^3 - 5x + 6.",
+                "options": ["12x^2 - 5", "12x^2", "4x^2", "1"],
+                "answer": 0,
+                "explanation": "Anwendung der Potenzregel ergibt 4*3*x^(3-1) - 5.",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Berechne die Ableitung der Funktion f(x) = 10.",
+                "options": ["0", "1", "10", "x"],
+                "answer": 0,
+                "explanation": "Die Ableitung einer Konstanten ist 0.",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Welche Funktion hat die Ableitung 6x?",
+                "options": ["x^3", "3x^2", "x^2", "3x"],
                 "answer": 1,
-                "explanation": "Die Ableitung einer linearen Funktion ist konstant, da die Steigung nicht variiert."
+                "explanation": "Die Ableitung von 3x^2 ist 6x.",
+                "taxonomy": "Analyzing"
             }
         ]
     },
@@ -504,59 +673,74 @@ def create_homework():
         "skill_level": 4,
         "questions": [
             {
-                "question": "Was ist die Ableitung von f(x) = x²?",
-                "options": [
-                    "f'(x) = 2x",
-                    "f'(x) = x",
-                    "f'(x) = 2x²",
-                    "f'(x) = 1"
-                ],
+                "question": "Was ist die Ableitung von f(x) = 8?",
+                "options": ["0", "8x", "1", "x"],
                 "answer": 0,
-                "explanation": "Die Ableitung von x² ist 2x, da der Exponent 2 um 1 reduziert wird und der ursprüngliche Exponent als Faktor dient."
+                "explanation": "Die Ableitung einer Konstanten ist immer 0.",
+                "taxonomy": "Remembering"
             },
             {
-                "question": "Berechne die Ableitung von f(x) = 3x³.",
-                "options": [
-                    "f'(x) = 9x²",
-                    "f'(x) = 3x²",
-                    "f'(x) = 6x",
-                    "f'(x) = 3x³"
-                ],
+                "question": "Was ist die Ableitung von f(x) = 2x^3?",
+                "options": ["6x^2", "2x^2", "3x^2", "6x"],
                 "answer": 0,
-                "explanation": "Die Regel besagt, dass der Exponent mit dem Faktor multipliziert wird, also 3 * 3 = 9 und der Exponent um 1 reduziert wird."
+                "explanation": "Anwendung der Potenzregel ergibt 3*2*x^(3-1) = 6x^2.",
+                "taxonomy": "Remembering"
             },
             {
-                "question": "Welche der folgenden Funktionen hat die Ableitung f'(x) = 4x³?",
-                "options": [
-                    "f(x) = x⁴",
-                    "f(x) = x³",
-                    "f(x) = x⁴ + 1",
-                    "f(x) = x³ + 4"
-                ],
-                "answer": 0,
-                "explanation": "Die Funktion f(x) = x⁴ hat die Ableitung f'(x) = 4x³ nach der Potenzregel."
-            },
-            {
-                "question": "Was ist die Ableitung von f(x) = 2x² + 3x?",
-                "options": [
-                    "f'(x) = 4x + 3",
-                    "f'(x) = 2x + 3",
-                    "f'(x) = 4x² + 3",
-                    "f'(x) = 2x²"
-                ],
-                "answer": 0,
-                "explanation": "Die Ableitung von 2x² ist 4x, und die Ableitung von 3x ist 3."
-            },
-            {
-                "question": "Für welche Funktion gilt: f'(x) = 6x + 2?",
-                "options": [
-                    "f(x) = 6x² + 2x",
-                    "f(x) = 3x² + 2x",
-                    "f(x) = 3x² + x",
-                    "f(x) = 6x + 2"
-                ],
+                "question": "Was ist die Regel zur Ableitung eines Produktes zweier Funktionen?",
+                "options": ["Potenzregel", "Produktregel", "Kettenregel", "Quotientenregel"],
                 "answer": 1,
-                "explanation": "Die Ableitung von 3x² ist 6x und die Ableitung von 2x ist 2."
+                "explanation": "Die Produktregel beschreibt die Ableitung eines Produktes von zwei Funktionen.",
+                "taxonomy": "Understanding"
+            },
+            {
+                "question": "Identifiziere die richtige Ableitung von f(x) = x^2 - 3x + 4.",
+                "options": ["2x - 3", "x - 3", "2x", "3x - 4"],
+                "answer": 0,
+                "explanation": "Anwendung der Potenzregel ergibt 2x - 3.",
+                "taxonomy": "Understanding"
+            },
+            {
+                "question": "Warum wird die Produktregel nicht bei f(x) = 2x + 3 verwendet?",
+                "options": ["Es gibt keine Produkte von Funktionen", "x ist keine Variable", "Die Funktion ist trivial", "Die Funktion hat konstante Terme"],
+                "answer": 0,
+                "explanation": "Die Funktion enthält keine Produkte zweier Funktionen.",
+                "taxonomy": "Understanding"
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = 5x^3 - 2x^2 + 7.",
+                "options": ["15x^2 - 4x", "15x^2", "5x^3", "4x^2"],
+                "answer": 0,
+                "explanation": "Potenzregel anwenden: 3*5*x^(3-1) - 2*2*x^(2-1).",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = 4x^4 - x^2.",
+                "options": ["16x^3 - 2x", "12x^3", "4x^3", "x^2"],
+                "answer": 0,
+                "explanation": "Potenzregel: 4*4*x^(4-1) - 2*x^(2-1).",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = 6x - 3.",
+                "options": ["6", "1", "6x", "0"],
+                "answer": 0,
+                "explanation": "Die Funktion ist linear, daher ist die Ableitung der Koeffizient von x.",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Identifiziere die Funktion mit der Ableitung 4x^3.",
+                "options": ["x^4", "x^3", "2x^3", "4x^2"],
+                "answer": 0,
+                "explanation": "Die Ableitung von x^4 ist 4x^3.",
+                "taxonomy": "Analyzing"
+            },
+            {
+                "question": "Welche Ableitung gehört zur Funktion f(x) = x^2 * (3x + 2)?",
+                "options": ["6x^2 + 4x", "x^2 + 3x", "6x^2 + 4", "3x + 2"],
+                "answer": 2,
+                "explanation": "Produktregel und Potenzregel anwenden für f(x).",
+                "taxonomy": "Analyzing"
             }
         ]
     },
@@ -564,59 +748,74 @@ def create_homework():
         "skill_level": 8,
         "questions": [
             {
-                "question": "Was ist die Ableitung von f(x) = x³ - 2x² + x?",
-                "options": [
-                    "f'(x) = 3x² - 4x + 1",
-                    "f'(x) = 3x² - 4x",
-                    "f'(x) = 3x² - 2x + 1",
-                    "f'(x) = 2x³ - 4x² + x"
-                ],
+                "question": "Was ist die Ableitung von f(x) = 7?",
+                "options": ["0", "7", "1", "x"],
                 "answer": 0,
-                "explanation": "Die Ableitung von x³ ist 3x², von -2x² ist -4x, und von x ist 1."
+                "explanation": "Die Ableitung jeder Konstante ist 0.",
+                "taxonomy": "Remembering"
             },
             {
-                "question": "Berechne die Ableitung von f(x) = 4x³ - x² + 6.",
-                "options": [
-                    "f'(x) = 12x² - 2x",
-                    "f'(x) = 12x² - x + 6",
-                    "f'(x) = 12x³ - 2x",
-                    "f'(x) = 4x² - x"
-                ],
+                "question": "Was ist die Ableitung von f(x) = 5x^5?",
+                "options": ["25x^4", "5x^4", "10x^5", "x^5"],
                 "answer": 0,
-                "explanation": "Die Ableitung von 4x³ ist 12x², die Ableitung von -x² ist -2x, und die Ableitung der Konstanten 6 ist 0."
+                "explanation": "Anwendung der Potenzregel ergibt 5*5*x^(5-1) = 25x^4.",
+                "taxonomy": "Remembering"
             },
             {
-                "question": "Welche Funktion hat die Ableitung f'(x) = 5x⁴ - 3x²?",
-                "options": [
-                    "f(x) = x⁵ - x³",
-                    "f(x) = 5x³ - 3x²",
-                    "f(x) = x⁵ - x³ + C",
-                    "f(x) = x⁴ - x³"
-                ],
+                "question": "Was ist die Ableitung einer Summe von Funktionen?",
+                "options": ["Potenzregel", "Kettenregel", "Summe der Ableitungen", "Ableitung des Produkts"],
                 "answer": 2,
-                "explanation": "Die Funktion f(x) = x⁵ - x³ hat die Ableitung f'(x) = 5x⁴ - 3x². Die Konstante C fällt bei der Ableitung weg."
+                "explanation": "Die Ableitung einer Summe ist die Summe der Ableitungen.",
+                "taxonomy": "Understanding"
             },
             {
-                "question": "Was ist die Ableitung von f(x) = 2x⁴ - x³ + 5x?",
-                "options": [
-                    "f'(x) = 8x³ - 3x² + 5",
-                    "f'(x) = 8x³ - 3x²",
-                    "f'(x) = 2x³ - 3x² + 5",
-                    "f'(x) = 8x³ + x² + 5"
-                ],
+                "question": "Warum ist die Kettenregel notwendig?",
+                "options": ["Um Ableitungen von zusammengesetzten Funktionen zu finden", "Um Konstante zu differenzieren", "Um unbestimmte Integrale zu lösen", "Um lineare Funktionen zu integrieren"],
                 "answer": 0,
-                "explanation": "Die Ableitung von 2x⁴ ist 8x³, von -x³ ist -3x², und von 5x ist 5."
+                "explanation": "Die Kettenregel wird beim Ableiten von zusammengesetzten Funktionen genutzt.",
+                "taxonomy": "Understanding"
             },
             {
-                "question": "Bestimme die Ableitung von f(x) = x³ + 2x² - 3x + 7.",
-                "options": [
-                    "f'(x) = 3x² + 4x - 3",
-                    "f'(x) = 3x² + 4x + 3",
-                    "f'(x) = 3x² - 4x + 3",
-                    "f'(x) = x² + 2x - 3"
-                ],
+                "question": "Warum benötigt f(x) = 3x^2 * (x^2 + 1) die Produktregel?",
+                "options": ["Funktion besteht aus einem Produkt zweier Funktionen", "Existiert keine Lösung", "Funktion ist linear", "Konstante wird addiert"],
                 "answer": 0,
-                "explanation": "Die Ableitung von x³ ist 3x², von 2x² ist 4x, und von -3x ist -3. Die Konstante 7 fällt weg."
+                "explanation": "Produktregel ist notwendig, da es ein Produkt zweier Funktionen ist.",
+                "taxonomy": "Analyzing"
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = 3x^4 - x^3 + 2x^2.",
+                "options": ["12x^3 - 3x^2 + 4x", "12x^3", "3x^3 - 2x", "x^2 - x"],
+                "answer": 0,
+                "explanation": "Jedes Glied getrennt ableiten: Potenzregel anwenden.",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = (x^2 + 1)^3.",
+                "options": ["6x(x^2 + 1)^2", "3(x^2 + 1)^2", "6x^2 + 1", "x^3"],
+                "answer": 0,
+                "explanation": "Anwendung der Kettenregel: Außendefunktion mit der Ableitung der Innendefunktion multiplizieren.",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Berechne die Ableitung von f(x) = ln(x) * x^2.",
+                "options": ["2x ln(x) + x", "x ln(x) + 2x", "3x ln(x)", "2x ln(x) + x^2"],
+                "answer": 1,
+                "explanation": "Produktregel anwenden: (ln(x) * 2x) + (1/x * x^2).",
+                "taxonomy": "Applying"
+            },
+            {
+                "question": "Analysiere die Ableitung der Funktion f(x) = 2x^3 * sin(x).",
+                "options": ["6x^2 sin(x) + 2x^3 cos(x)", "x^2 sin(x)", "6x^2 cos(x)", "sin(x) + x^3"],
+                "answer": 0,
+                "explanation": "Produktregel anwenden: (6x^2 * sin(x)) + (2x^3 * cos(x)).",
+                "taxonomy": "Analyzing"
+            },
+            {
+                "question": "Welche Funktion hat die Ableitung 15x^4 + sin(x)?",
+                "options": ["sin(x) + 3x^5", "5x^5 - cos(x)", "3x^5 + x", "x^5"],
+                "answer": 1,
+                "explanation": "Die Ableitung von 5x^5 ist 25x^4, und die von –cos(x) ist sin(x).",
+                "taxonomy": "Analyzing"
             }
         ]
     }
@@ -637,9 +836,9 @@ def create_homework():
                 options = json.dumps(question["options"])
                 conn.execute(
                     '''INSERT INTO HomeworkQuestions
-                       (homework_id, skill_level, question, correct_answer, explanation, question_type, options)
-                       VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?)''',
-                    (homework_id, skill_level, question["question"], question["answer"], question["explanation"], options)
+                       (homework_id, skill_level, question, correct_answer, explanation, question_type, options, taxonomy)
+                       VALUES (?, ?, ?, ?, ?, 'multiple_choice', ?, ?)''',
+                    (homework_id, skill_level, question["question"], question["answer"], question["explanation"], options, question["taxonomy"])
                 )
 
         conn.commit()
@@ -666,18 +865,25 @@ def view_homework_student(homework_id, student_id):
         'WHERE Homework.id = ?', (homework_id,)
     ).fetchone()
 
-    # Sicherstellen, dass die Klasseninformationen erfolgreich geladen werden
     if not class_info:
         conn.close()
         return "Fehler: Diese Klasse existiert nicht.", 404
 
     # Abrufen des Skill-Levels des Schülers
     student = conn.execute(
-        'SELECT skill_level FROM Participants WHERE id = ?', (student_id,)
+        'SELECT class_skill_level FROM ClassMembers WHERE student_id = ?', (student_id,)
     ).fetchone()
-    student_skill_level = student['skill_level'] if student else 0
+    student_skill_level = student['class_skill_level'] if student else 0
 
-    # Bestimmen der Hausaufgabe
+    # Skill-Level-Bereich definieren
+    if student_skill_level <= 3:
+        skill_level = 1
+    elif student_skill_level <= 7:
+        skill_level = 4
+    else:
+        skill_level = 8
+
+    # Hausaufgabe abrufen
     homework = conn.execute(
         'SELECT id, title, description, date_created, class_id FROM Homework WHERE id = ?',
         (homework_id,)
@@ -687,10 +893,10 @@ def view_homework_student(homework_id, student_id):
         conn.close()
         return "Fehler: Diese Hausaufgabe existiert nicht.", 404
 
-    # Abrufen der Fragen und Filtern durch Skill-Level
+    # Fragen basierend auf Skill-Level abrufen
     question_data = conn.execute(
-        'SELECT question, correct_answer, explanation, options FROM HomeworkQuestions WHERE homework_id = ? AND skill_level <= ?',
-        (homework_id, student_skill_level)
+        'SELECT question, correct_answer, explanation, options, taxonomy, skill_level FROM HomeworkQuestions WHERE homework_id = ? AND skill_level = ?',
+        (homework_id, skill_level)
     ).fetchall()
 
     questions = []
@@ -710,11 +916,12 @@ def view_homework_student(homework_id, student_id):
         'view_homework_student.html',
         homework=homework,
         questions=questions,
-        class_info=class_info,  # Wichtige Änderung: class_info wird hier übergeben
+        class_info=class_info,
         student_id=student_id,
         correct_answers=correct_answers,
         explanations=explanations
     )
+
 
 @app.route('/view_homework_teacher/<int:homework_id>/<int:class_id>/<int:teacher_id>')
 def view_homework_teacher(homework_id, class_id, teacher_id):
@@ -733,7 +940,7 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
 
     # Abrufen aller Fragen ohne Berücksichtigung des Skill-Levels
     question_data = conn.execute(
-        'SELECT question, correct_answer, explanation, options FROM HomeworkQuestions WHERE homework_id = ?',
+        'SELECT question, correct_answer, explanation, options, taxonomy, skill_level FROM HomeworkQuestions WHERE homework_id = ?',
         (homework_id,)
     ).fetchall()
 
@@ -760,6 +967,7 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         explanations=explanations
     )
 
+
 @app.route('/delete_homework', methods=['POST'])
 def delete_homework():
     homework_id = request.form.get('homework_id')
@@ -776,6 +984,37 @@ def delete_homework():
     conn.close()
 
     return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=teacher_id))
+
+
+@app.route('/submit_homework', methods=['POST'])
+def submit_homework():
+    from datetime import datetime
+    conn = get_db_connection()
+
+    data = request.get_json()
+    homework_id = data.get('homework_id')
+    student_id = data.get('student_id')
+    correct_count = data.get('correct_count')
+    incorrect_count = data.get('incorrect_count')
+
+    # Datum der Abgabe speichern
+    date_submitted = datetime.now().date()
+
+    try:
+        # Ergebnis in der Datenbank speichern
+        conn.execute(
+            '''
+            INSERT INTO HomeworkResults (homework_id, student_id, correct_count, incorrect_count, date_submitted)
+            VALUES (?, ?, ?, ?, ?)
+            ''',
+            (homework_id, student_id, correct_count, incorrect_count, date_submitted)
+        )
+
+        conn.commit()
+        conn.close()
+        return "Ergebnisse erfolgreich gespeichert", 200
+    except Exception as e:
+        return f"Ein Fehler ist aufgetreten: {str(e)}", 500    
 
 
 if __name__ == '__main__':
