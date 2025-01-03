@@ -131,9 +131,10 @@ def class_details_teacher(class_id, teacher_id):
 
     # Hausaufgaben der Klasse abrufen
     homework_list = conn.execute(
-        'SELECT id, description, title,  date_created FROM Homework WHERE class_id = ?',
+        'SELECT id, description, title, date_created, status FROM Homework WHERE class_id = ?',
         (class_id,)
     ).fetchall()
+
 
     conn.close()
 
@@ -388,7 +389,7 @@ def class_details_student(class_id, student_id):
             CASE WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Erledigt' ELSE 'Offen' END AS status
         FROM Homework
         LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id AND HomeworkResults.student_id = ?
-        WHERE Homework.class_id = ?
+        WHERE Homework.class_id = ? AND status = 'published'
         ''',
         (student_id, class_id)
     ).fetchall()
@@ -482,6 +483,7 @@ def create_homework():
     class_id = request.form['class_id']
     description = request.form['description']
     title = request.form['title']
+    teacher_id = request.form['teacher_id']
 
     # Hole Klasseninformationen aus der Datenbank
     conn = get_db_connection()
@@ -581,7 +583,7 @@ def create_homework():
     except Exception as e:
         return f"Ein Fehler ist aufgetreten: {str(e)}", 500
 
-    return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=session.get('teacher_id')))
+    return redirect(url_for('edit_homework', homework_id=homework_id, class_id=class_id, teacher_id=teacher_id))
 
 #@app.route('/create_homework', methods=['POST'])
 #def create_homework():
@@ -1014,7 +1016,100 @@ def submit_homework():
         conn.close()
         return "Ergebnisse erfolgreich gespeichert", 200
     except Exception as e:
-        return f"Ein Fehler ist aufgetreten: {str(e)}", 500    
+        return f"Ein Fehler ist aufgetreten: {str(e)}", 500  
+    
+@app.route('/edit_homework/<int:homework_id>/<int:class_id>/<int:teacher_id>', methods=['GET', 'POST'])
+def edit_homework(homework_id, class_id, teacher_id):
+    import json
+    conn = get_db_connection()
+
+    if request.method == 'POST':
+        # Daten aktualisieren
+        questions = request.form.getlist('questions')
+        options_list = request.form.getlist('options')
+        correct_answers = request.form.getlist('correct_answers')
+        explanations = request.form.getlist('explanations')
+        taxonomies = request.form.getlist('taxonomies')
+        skill_levels = request.form.getlist('skill_levels')
+
+        # Zähle Fragen pro Schwierigkeitsgrad
+        skill_count = {1: 0, 4: 0, 8: 0}
+
+        for idx, question_id in enumerate(request.form.getlist('question_ids')):
+            # Verarbeite die Optionen
+            options = json.dumps(options_list[idx].split(','))
+
+            # Prüfe, ob das Skill-Level gültig ist
+            try:
+                skill_level = int(skill_levels[idx])
+                if skill_level in skill_count:
+                    skill_count[skill_level] += 1
+            except ValueError:
+                return "Ungültiger Schwierigkeitsgrad.", 400
+
+            # Aktualisiere die Frage in der Datenbank
+            conn.execute(
+                '''UPDATE HomeworkQuestions
+                   SET question = ?, options = ?, correct_answer = ?, explanation = ?, taxonomy = ?, skill_level = ?
+                   WHERE id = ?''',
+                (questions[idx], options, correct_answers[idx], explanations[idx], taxonomies[idx], skill_levels[idx], question_id)
+            )
+
+        # Überprüfe die Bedingung: 10 Fragen pro Schwierigkeitsgrad
+        if 'publish' in request.form:
+            if any(count != 10 for count in skill_count.values()):
+                conn.close()
+                return "Eine Hausaufgabe kann nur veröffentlicht werden, wenn sie genau 10 Fragen pro Schwierigkeitsgrad enthält.", 400
+
+            # Status auf 'published' setzen
+            conn.execute('UPDATE Homework SET status = ? WHERE id = ?', ('published', homework_id))
+        else:
+            # Status auf 'draft' setzen
+            conn.execute('UPDATE Homework SET status = ? WHERE id = ?', ('draft', homework_id))
+
+        conn.commit()
+        conn.close()
+
+        # Zurück zur Klassenansicht
+        return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=teacher_id))
+
+    # Bestehende Daten laden
+    homework = conn.execute('SELECT * FROM Homework WHERE id = ?', (homework_id,)).fetchone()
+    questions = conn.execute('SELECT * FROM HomeworkQuestions WHERE homework_id = ?', (homework_id,)).fetchall()
+    conn.close()
+
+    # JSON-Modul zur Vorlage übergeben
+    return render_template('edit_homework.html', 
+                           homework=homework, 
+                           questions=questions, 
+                           class_id=class_id, 
+                           teacher_id=teacher_id, 
+                           json=json)
+
+
+
+@app.route('/toggle_homework_status/<int:homework_id>', methods=['POST'])
+def toggle_homework_status(homework_id):
+    conn = get_db_connection()
+
+    # Aktuellen Status der Hausaufgabe abrufen
+    current_status = conn.execute(
+        'SELECT status FROM Homework WHERE id = ?', (homework_id,)
+    ).fetchone()['status']
+
+    # Neuen Status setzen
+    new_status = 'draft' if current_status == 'published' else 'published'
+    conn.execute(
+        'UPDATE Homework SET status = ? WHERE id = ?',
+        (new_status, homework_id)
+    )
+
+    conn.commit()
+    conn.close()
+
+    # Zurück zur Bearbeitungsansicht
+    return redirect(url_for('edit_homework', homework_id=homework_id))
+
 
 
 if __name__ == '__main__':
