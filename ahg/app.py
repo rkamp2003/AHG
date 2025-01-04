@@ -189,17 +189,25 @@ def delete_class():
 
 @app.route('/student_details/<int:student_id>/<int:class_id>/<int:teacher_id>')
 def student_details(student_id, class_id, teacher_id):
+    import json
+    from datetime import datetime
     conn = get_db_connection()
 
-    # Hole Schülerinformationen
+    # Schülerinformationen abrufen
     student_info = conn.execute(
-        'SELECT id, name, email, skill_level FROM Participants WHERE id = ?',
-        (student_id,)
+        '''
+        SELECT Participants.id, Participants.name, Participants.email, Participants.skill_level,
+               ClassMembers.class_skill_level
+        FROM Participants
+        JOIN ClassMembers ON Participants.id = ClassMembers.student_id
+        WHERE Participants.id = ? AND ClassMembers.class_id = ?
+        ''',
+        (student_id, class_id)
     ).fetchone()
 
     if not student_info:
         conn.close()
-        return "Fehler: Schüler existiert nicht.", 404
+        return "Fehler: Schüler existiert nicht oder ist nicht in dieser Klasse.", 404
 
     # Hausaufgabenergebnisse und Datum abrufen
     homework_results = conn.execute(
@@ -216,24 +224,51 @@ def student_details(student_id, class_id, teacher_id):
         (student_id, class_id)
     ).fetchall()
 
-    # Daten für den Zeitreihenplot vorbereiten
-    # Konvertiere das Feld `date_submitted` beim Abrufen
+    # Skill-Level-Verlauf abrufen
+    skill_history = conn.execute(
+        '''
+        SELECT 
+            HomeworkResults.date_submitted, 
+            ClassMembers.class_skill_level
+        FROM HomeworkResults
+        JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        JOIN ClassMembers ON Homework.class_id = ClassMembers.class_id
+        WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
+        ORDER BY HomeworkResults.date_submitted ASC
+        ''',
+        (student_id, class_id)
+    ).fetchall()
+
+    # Daten für den Fragen-Fortschritt aufbereiten
     dates = []
+    titles = []
+    correct_counts = []
+
     for result in homework_results:
+        # Datum umwandeln, falls nötig
         try:
-            # Falls das Feld als String vorliegt
             date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
         except (ValueError, TypeError):
-            # Falls das Feld bereits ein datetime-Objekt ist
             date_submitted = result['date_submitted']
         dates.append(date_submitted.strftime('%Y-%m-%d'))
-    correct_counts = [result['correct_count'] for result in homework_results]
 
-    # Durchschnitt berechnen
+        titles.append(result['title'])
+        correct_counts.append(result['correct_count'])
+
+    # Durchschnitt richtiger Antworten
     mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
 
-    # Füge eine Liste der Titel hinzu
-    titles = [result['title'] for result in homework_results]
+    # Daten für Skill-Level-Verlauf aufbereiten
+    skill_dates = []
+    skill_levels = []
+
+    for entry in skill_history:
+        try:
+            skill_date = datetime.strptime(entry['date_submitted'], '%Y-%m-%d')
+        except (ValueError, TypeError):
+            skill_date = entry['date_submitted']
+        skill_dates.append(skill_date.strftime('%Y-%m-%d'))
+        skill_levels.append(entry['class_skill_level'])
 
     conn.close()
 
@@ -245,8 +280,11 @@ def student_details(student_id, class_id, teacher_id):
         dates=dates,
         titles=titles,
         correct_counts=correct_counts,
-        mean_correct=mean_correct
+        mean_correct=mean_correct,
+        skill_dates=skill_dates,
+        skill_levels=skill_levels
     )
+
 
 
 
@@ -303,20 +341,46 @@ def student_dashboard():
     conn = get_db_connection()
     student = conn.execute('SELECT * FROM Participants WHERE id = ?', (student_id,)).fetchone()
     joined_classes = conn.execute(
-        'SELECT Classes.*, Teachers.name AS teacher_name '
-        'FROM Classes '
-        'JOIN ClassMembers ON Classes.id = ClassMembers.class_id '
-        'JOIN Teachers ON Classes.teacher_id = Teachers.id '
-        'WHERE ClassMembers.student_id = ?',
+        '''
+        SELECT Classes.*, Teachers.name AS teacher_name, ClassMembers.class_skill_level
+        FROM Classes
+        JOIN ClassMembers ON Classes.id = ClassMembers.class_id
+        JOIN Teachers ON Classes.teacher_id = Teachers.id
+        WHERE ClassMembers.student_id = ?
+        ''',
         (student_id,)
     ).fetchall()
 
     # Konvertiere die Datenbankzeilen in eine Liste von Dictionaries
     all_classes = conn.execute('SELECT id, class_name FROM Classes').fetchall()
     all_classes_dict = [{'id': int(class_['id']), 'class_name': class_['class_name']} for class_ in all_classes]
+    
+     # Zeitverlauf des gesamten Skill Levels
+    skill_history = conn.execute(
+        '''
+        SELECT date_submitted, ROUND(AVG(class_skill_level)) AS avg_skill
+        FROM HomeworkResults
+        JOIN ClassMembers ON HomeworkResults.student_id = ClassMembers.student_id
+        WHERE HomeworkResults.student_id = ?
+        GROUP BY date_submitted
+        ORDER BY date_submitted
+        ''',
+        (student_id,)
+    ).fetchall()
+
+    dates = [entry['date_submitted'] for entry in skill_history]
+    skill_levels = [entry['avg_skill'] for entry in skill_history]
+
     conn.close()
 
-    return render_template('student_dashboard.html', student=student, joined_classes=joined_classes, all_classes=all_classes_dict)
+    return render_template(
+        'student_dashboard.html',
+        student=student,
+        joined_classes=joined_classes, 
+        all_classes=all_classes_dict,
+        dates=dates,
+        skill_levels=skill_levels
+        )
 
 
 
@@ -359,14 +423,18 @@ def join_class():
 
 @app.route('/class_details_student/<int:class_id>/<int:student_id>')
 def class_details_student(class_id, student_id):
+    import json
+    from datetime import datetime
     conn = get_db_connection()
 
     # Informationen zur Klasse und zum Lehrer abrufen
     class_info = conn.execute(
-        'SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name '
-        'FROM Classes '
-        'JOIN Teachers ON Classes.teacher_id = Teachers.id '
-        'WHERE Classes.id = ?', (class_id,)
+        '''
+        SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name
+        FROM Classes
+        JOIN Teachers ON Classes.teacher_id = Teachers.id
+        WHERE Classes.id = ?
+        ''', (class_id,)
     ).fetchone()
 
     # Informationen zum Schüler abrufen
@@ -394,35 +462,42 @@ def class_details_student(class_id, student_id):
         (student_id, class_id)
     ).fetchall()
 
-    # Informationen zu den Ergebnissen dieser Klasse abrufen
+    # Ergebnisse für richtige Antworten und Datum abrufen
     homework_results = conn.execute(
         '''
         SELECT 
             HomeworkResults.correct_count, 
             HomeworkResults.date_submitted,
-            Homework.title
+            Homework.title,
+            ClassMembers.class_skill_level
         FROM HomeworkResults
         JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        JOIN ClassMembers ON HomeworkResults.student_id = ClassMembers.student_id
         WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
         ORDER BY HomeworkResults.date_submitted ASC
         ''',
         (student_id, class_id)
     ).fetchall()
 
-    # Konvertiere das Feld `date_submitted` beim Abrufen
+    # Daten für Diagramme vorbereiten
     dates = []
-    for result in homework_results:
-        try:
-            # Falls das Feld als String vorliegt
-            date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
-        except (ValueError, TypeError):
-            # Falls das Feld bereits ein datetime-Objekt ist
-            date_submitted = result['date_submitted']
-        dates.append(date_submitted.strftime('%Y-%m-%d'))
-    titles = [result['title'] for result in homework_results]
-    correct_counts = [result['correct_count'] for result in homework_results]
+    titles = []
+    correct_counts = []
+    skill_levels = []
 
-    # Durchschnittliche richtige Antworten pro Hausaufgabe
+    for result in homework_results:
+        # Fehler vermeiden: String in Datum konvertieren
+        if isinstance(result['date_submitted'], str):
+            date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
+        else:
+            date_submitted = result['date_submitted']
+
+        dates.append(date_submitted.strftime('%Y-%m-%d'))
+        titles.append(result['title'])
+        correct_counts.append(result['correct_count'])
+        skill_levels.append(result['class_skill_level'])
+
+    # Durchschnittliche richtige Antworten
     mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
 
     conn.close()
@@ -436,8 +511,11 @@ def class_details_student(class_id, student_id):
         dates=dates,
         titles=titles,
         correct_counts=correct_counts,
+        skill_levels=skill_levels,
         mean_correct=mean_correct
     )
+
+
 
 
 
@@ -993,17 +1071,18 @@ def submit_homework():
     from datetime import datetime
     conn = get_db_connection()
 
+    # JSON-Daten aus der Anfrage holen
     data = request.get_json()
     homework_id = data.get('homework_id')
     student_id = data.get('student_id')
-    correct_count = data.get('correct_count')
-    incorrect_count = data.get('incorrect_count')
+    correct_count = int(data.get('correct_count'))
+    incorrect_count = int(data.get('incorrect_count'))
 
-    # Datum der Abgabe speichern
+    # Datum der Abgabe erfassen
     date_submitted = datetime.now().date()
 
     try:
-        # Ergebnis in der Datenbank speichern
+        # Ergebnis speichern
         conn.execute(
             '''
             INSERT INTO HomeworkResults (homework_id, student_id, correct_count, incorrect_count, date_submitted)
@@ -1012,11 +1091,68 @@ def submit_homework():
             (homework_id, student_id, correct_count, incorrect_count, date_submitted)
         )
 
+        # 1. Anpassung des Class Skill Levels
+        class_skill_level = conn.execute(
+            '''
+            SELECT class_skill_level FROM ClassMembers
+            WHERE student_id = ? AND class_id = (
+                SELECT class_id FROM Homework WHERE id = ?
+            )
+            ''',
+            (student_id, homework_id)
+        ).fetchone()['class_skill_level']
+
+        # Neue Bewertung basierend auf der Leistung
+        if correct_count >= 7:
+            class_skill_level = min(10, class_skill_level + 1)  # Erhöhen (max 10)
+        elif correct_count < 4:
+            class_skill_level = max(1, class_skill_level - 1)  # Senken (min 1)
+
+        # Aktualisieren des Class Skill Levels
+        conn.execute(
+            '''
+            UPDATE ClassMembers
+            SET class_skill_level = ?
+            WHERE student_id = ? AND class_id = (
+                SELECT class_id FROM Homework WHERE id = ?
+            )
+            ''',
+            (class_skill_level, student_id, homework_id)
+        )
+
+        # 2. Berechnung des Gesamt-Skill-Levels
+        avg_class_skill = conn.execute(
+            '''
+            SELECT ROUND(AVG(class_skill_level), 0) as avg_skill
+            FROM ClassMembers
+            WHERE student_id = ?
+            ''',
+            (student_id,)
+        ).fetchone()['avg_skill']
+
+        # Gesamt-Skill-Level aktualisieren
+        conn.execute(
+            '''
+            UPDATE Participants
+            SET skill_level = ?
+            WHERE id = ?
+            ''',
+            (avg_class_skill, student_id)
+        )
+
         conn.commit()
         conn.close()
-        return "Ergebnisse erfolgreich gespeichert", 200
+
+        # Erfolgsmeldung mit neuem Skill Level
+        return {
+            "message": "Ergebnisse erfolgreich gespeichert",
+            "class_skill_level": class_skill_level,
+            "overall_skill_level": avg_class_skill
+        }, 200
+
     except Exception as e:
-        return f"Ein Fehler ist aufgetreten: {str(e)}", 500  
+        return f"Ein Fehler ist aufgetreten: {str(e)}", 500
+
     
 @app.route('/edit_homework/<int:homework_id>/<int:class_id>/<int:teacher_id>', methods=['GET', 'POST'])
 def edit_homework(homework_id, class_id, teacher_id):

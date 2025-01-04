@@ -15,104 +15,100 @@
     <h3>Informationen:</h3>
     <ul class="info-list">
         <li>Email: {{ student_info['email'] }}</li>
-        <li>Skill Level: {{ student_info['skill_level'] }}</li>
+        <li>Skill Level (Klasse): {{ student_info['class_skill_level'] }}</li>
         <li> Durchschnitt richtiger Antworten pro Hausaufgabe: {{ mean_correct }}</li>
     </ul>
 
     <h2>Fortschritt über die Zeit</h2>
-    <div class="chart-container">
-        <canvas id="progressChart"></canvas>
+    <div class="charts-container">
+        <!-- Fragen-Fortschritt -->
+        <div class="chart-container">
+            <canvas id="progressChart"></canvas>
+        </div>
+    
+        <!-- Skill-Level-Fortschritt -->
+        <div class="chart-container">
+            <canvas id="skillChart"></canvas>
+        </div>
     </div>
-
+    
     <script>
-        const ctx = document.getElementById('progressChart').getContext('2d');
-        const data = {
-            labels: {{ dates | tojson }}, // X-Achse: Datum
-            datasets: [
-                {
-                    label: 'Richtige Antworten',
-                    data: {{ correct_counts | tojson }}, // Y-Achse: Richtige Antworten
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.2,
-                    pointRadius: 5,
-                    pointHoverRadius: 7
-                }
-            ]
+        // Erste Grafik - Fragen-Fortschritt
+        const ctx1 = document.getElementById('progressChart').getContext('2d');
+        const data1 = {
+            labels: {{ dates | tojson }},
+            datasets: [{
+                label: 'Richtige Antworten',
+                data: {{ correct_counts | tojson }},
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
         };
     
-        // Tooltips erweitern, um Titel anzuzeigen
-        const config = {
+        const config1 = {
             type: 'line',
-            data: data,
+            data: data1,
             options: {
                 responsive: true,
                 plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            font: {
-                                size: 14
-                            }
-                        }
-                    },
+                    legend: { position: 'top' },
                     title: {
                         display: true,
-                        text: 'Fortschritt der richtigen Antworten',
-                        font: {
-                            size: 20
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(tooltipItem) {
-                                // Füge Titel der Hausaufgabe zum Tooltip hinzu
-                                const title = {{ titles | tojson }}[tooltipItem.dataIndex];
-                                const correctAnswers = tooltipItem.raw;
-                                return `${title}: ${correctAnswers} richtige Antworten`;
-                            }
-                        }
+                        text: 'Fragen-Fortschritt',
+                        font: { size: 20 }
                     }
                 },
                 scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Datum',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        ticks: {
-                            font: {
-                                size: 12
-                            }
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Richtige Antworten',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        ticks: {
-                            stepSize: 1,
-                            font: {
-                                size: 12
-                            }
-                        },
-                        beginAtZero: true
-                    }
+                    x: { title: { display: true, text: 'Datum' } },
+                    y: { title: { display: true, text: 'Richtige Antworten' }, beginAtZero: true }
                 }
             }
         };
+        new Chart(ctx1, config1);
     
-        new Chart(ctx, config);
-    </script>    
-</div>
+        // Zweite Grafik - Skill-Level-Fortschritt
+        const ctx2 = document.getElementById('skillChart').getContext('2d');
+        const data2 = {
+            labels: {{ skill_dates | tojson }},
+            datasets: [{
+                label: 'Skill Level',
+                data: {{ skill_levels | tojson }},
+                borderColor: 'rgba(255, 99, 132, 1)',
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        };
+    
+        const config2 = {
+            type: 'line',
+            data: data2,
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'top' },
+                    title: {
+                        display: true,
+                        text: 'Skill-Level-Fortschritt',
+                        font: { size: 20 }
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Datum' } },
+                    y: { title: { display: true, text: 'Skill Level' }, beginAtZero: true, min: 1, max: 10 }
+                }
+            }
+        };
+        new Chart(ctx2, config2);
+    </script>
+    
 </body>
 </html>

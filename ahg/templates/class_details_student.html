@@ -39,20 +39,29 @@
         {% endfor %}
     </ul>
 
-
     <h3>Fortschritt über die Zeit</h3>
-    <div class="chart-container">
-        <canvas id="progressChart"></canvas>
+    <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
+        <!-- Chart für richtige Antworten -->
+        <div style="flex: 1; max-width: 50%;">
+            <canvas id="progressChart"></canvas>
+        </div>
+        <!-- Chart für Skill Level -->
+        <div style="flex: 1; max-width: 50%;">
+            <canvas id="skillChart"></canvas>
+        </div>
     </div>
 
-    <!-- Button zum Verlassen der Klasse -->
-    <form action="/leave_class" method="post">
+     <!-- Button zum Verlassen der Klasse -->
+     <form action="/leave_class" method="post">
         <input type="hidden" name="student_id" value="{{ student_id }}">
         <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
         <button type="submit" class="submit-button danger">Kurs verlassen</button>
     </form>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <script>
+        // Fortschritt richtige Antworten
         const ctx = document.getElementById('progressChart').getContext('2d');
         const data = {
             labels: {{ dates | tojson }},
@@ -66,88 +75,98 @@
                     fill: true,
                     tension: 0.2,
                     pointRadius: 5,
-                    pointHoverRadius: 7,
-                    pointStyle: 'circle',
-                    tooltips: {
-                        callbacks: {
-                            title: (tooltipItems) => {
-                                const index = tooltipItems[0].index;
-                                return {{ titles | tojson }}[index];
-                            }
-                        }
-                    }
+                    pointHoverRadius: 7
                 }
             ]
         };
-
 
         const config = {
             type: 'line',
             data: data,
             options: {
                 responsive: true,
+                maintainAspectRatio: false, // Gleiche Größe unabhängig vom Inhalt
                 plugins: {
                     legend: {
                         position: 'top',
                         labels: {
-                            font: {
-                                size: 14
-                            }
+                            font: { size: 14 }
                         }
                     },
                     title: {
                         display: true,
-                        text: 'Fortschritt der richtigen Antworten',
-                        font: {
-                            size: 20
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(tooltipItem) {
-                                const title = {{ titles | tojson }}[tooltipItem.dataIndex];
-                                const correctAnswers = tooltipItem.raw;
-                                return `${title}: ${correctAnswers} richtige Antworten`;
-                            }
-                        }
+                        text: 'Richtige Antworten über Zeit',
+                        font: { size: 20 }
                     }
                 },
                 scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Datum',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        ticks: {
-                            font: {
-                                size: 12
-                            }
-                        }
+                    x: { 
+                        title: { display: true, text: 'Datum' } 
                     },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Richtige Antworten',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        ticks: {
-                            stepSize: 1,
-                            font: {
-                                size: 12
-                            }
-                        },
-                        beginAtZero: true
+                    y: { 
+                        title: { display: true, text: 'Richtige Antworten' }, 
+                        min: 0, 
+                        max: 10, 
+                        stepSize: 1 
                     }
                 }
             }
         };
-
         new Chart(ctx, config);
+
+        // Fortschritt Skill Level
+        const skillCtx = document.getElementById('skillChart').getContext('2d');
+        const skillData = {
+            labels: {{ dates | tojson }},
+            datasets: [
+                {
+                    label: 'Skill Level',
+                    data: {{ skill_levels | tojson }},
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
+        };
+
+        const skillConfig = {
+            type: 'line',
+            data: skillData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false, // Gleiche Größe unabhängig vom Inhalt
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Class Skill Level über Zeit',
+                        font: { size: 20 }
+                    }
+                },
+                scales: {
+                    x: { 
+                        title: { display: true, text: 'Datum' } 
+                    },
+                    y: { 
+                        title: { display: true, text: 'Skill Level' }, 
+                        min: 1, 
+                        max: 10, 
+                        stepSize: 1 
+                    }
+                }
+            }
+        };
+        new Chart(skillCtx, skillConfig);
     </script>
+
 </body>
 </html>
