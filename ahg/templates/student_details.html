@@ -19,96 +19,125 @@
         <li> Durchschnitt richtiger Antworten pro Hausaufgabe: {{ mean_correct }}</li>
     </ul>
 
-    <h2>Fortschritt über die Zeit</h2>
-    <div class="charts-container">
-        <!-- Fragen-Fortschritt -->
-        <div class="chart-container">
+    <h3>Fortschritt über die Zeit</h3>
+    <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
+        <!-- Chart für richtige Antworten -->
+        <div style="flex: 1; max-width: 50%; height: 300px;">
             <canvas id="progressChart"></canvas>
         </div>
-    
-        <!-- Skill-Level-Fortschritt -->
-        <div class="chart-container">
+        <!-- Chart für Skill Level -->
+        <div style="flex: 1; max-width: 50%; height: 300px;">
             <canvas id="skillChart"></canvas>
         </div>
     </div>
-    
+
+     <!-- JavaScript für die Diagramme -->
     <script>
-        // Erste Grafik - Fragen-Fortschritt
-        const ctx1 = document.getElementById('progressChart').getContext('2d');
-        const data1 = {
+        // Fortschritt richtige Antworten
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        const data = {
             labels: {{ dates | tojson }},
-            datasets: [{
-                label: 'Richtige Antworten',
-                data: {{ correct_counts | tojson }},
-                borderColor: 'rgba(75, 192, 192, 1)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.2,
-                pointRadius: 5,
-                pointHoverRadius: 7
-            }]
+            datasets: [
+                {
+                    label: 'Richtige Antworten',
+                    data: {{ correct_counts | tojson }},
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
         };
-    
-        const config1 = {
+
+        const config = {
             type: 'line',
-            data: data1,
+            data: data,
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    legend: { position: 'top' },
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
                     title: {
                         display: true,
-                        text: 'Fragen-Fortschritt',
+                        text: 'Richtige Antworten über Zeit',
                         font: { size: 20 }
                     }
                 },
                 scales: {
-                    x: { title: { display: true, text: 'Datum' } },
-                    y: { title: { display: true, text: 'Richtige Antworten' }, beginAtZero: true }
+                    x: { 
+                        title: { display: true, text: 'Datum' } 
+                    },
+                    y: { 
+                        title: { display: true, text: 'Richtige Antworten' }, 
+                        min: 0, 
+                        max: 10, 
+                        ticks: { stepSize: 1 } 
+                    }
                 }
             }
         };
-        new Chart(ctx1, config1);
-    
-        // Zweite Grafik - Skill-Level-Fortschritt
-        const ctx2 = document.getElementById('skillChart').getContext('2d');
-        const data2 = {
+        new Chart(ctx, config);
+
+        // Fortschritt Skill Level
+        const skillCtx = document.getElementById('skillChart').getContext('2d');
+        const skillData = {
             labels: {{ skill_dates | tojson }},
-            datasets: [{
-                label: 'Skill Level',
-                data: {{ skill_levels | tojson }},
-                borderColor: 'rgba(255, 99, 132, 1)',
-                backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.2,
-                pointRadius: 5,
-                pointHoverRadius: 7
-            }]
+            datasets: [
+                {
+                    label: 'Skill Level',
+                    data: {{ skill_levels | tojson }},
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
         };
-    
-        const config2 = {
+
+        const skillConfig = {
             type: 'line',
-            data: data2,
+            data: skillData,
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    legend: { position: 'top' },
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
                     title: {
                         display: true,
-                        text: 'Skill-Level-Fortschritt',
+                        text: 'Class Skill Level über Zeit',
                         font: { size: 20 }
                     }
                 },
                 scales: {
-                    x: { title: { display: true, text: 'Datum' } },
-                    y: { title: { display: true, text: 'Skill Level' }, beginAtZero: true, min: 1, max: 10 }
+                    x: { 
+                        title: { display: true, text: 'Datum' } 
+                    },
+                    y: { 
+                        title: { display: true, text: 'Skill Level' }, 
+                        min: 1, 
+                        max: 10, 
+                        ticks: { stepSize: 1 } 
+                    }
                 }
             }
         };
-        new Chart(ctx2, config2);
+        new Chart(skillCtx, skillConfig);
     </script>
-    
 </body>
 </html>

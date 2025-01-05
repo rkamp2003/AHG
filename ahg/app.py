@@ -104,22 +104,21 @@ def create_class():
 
 @app.route('/class_details_teacher/<int:class_id>/<int:teacher_id>')
 def class_details_teacher(class_id, teacher_id):
+    import json
+    from datetime import datetime
     conn = get_db_connection()
-    
-    # Hole vollständige Klasseninformationen
+
+    # Klasseninformationen abrufen
     class_info = conn.execute(
-        'SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name '
-        'FROM Classes '
-        'JOIN Teachers ON Classes.teacher_id = Teachers.id '
-        'WHERE Classes.id = ? AND teacher_id = ?',
-        (class_id, teacher_id)
+        '''
+        SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name
+        FROM Classes
+        JOIN Teachers ON Classes.teacher_id = Teachers.id
+        WHERE Classes.id = ? AND teacher_id = ?
+        ''', (class_id, teacher_id)
     ).fetchone()
 
-    if not class_info:
-        conn.close()
-        return "Fehler: Klasse existiert nicht oder Berechtigungen fehlen.", 404
-
-    # Liste der Schüler abrufen
+    # Schüler und deren Skill Levels abrufen
     students = conn.execute(
         '''
         SELECT Participants.id, Participants.name, ClassMembers.class_skill_level
@@ -129,12 +128,50 @@ def class_details_teacher(class_id, teacher_id):
         ''', (class_id,)
     ).fetchall()
 
-    # Hausaufgaben der Klasse abrufen
+    # Hausaufgaben abrufen
     homework_list = conn.execute(
-        'SELECT id, description, title, date_created, status FROM Homework WHERE class_id = ?',
-        (class_id,)
+        '''
+        SELECT id, title, date_created, status
+        FROM Homework
+        WHERE class_id = ?
+        ''', (class_id,)
     ).fetchall()
 
+    # Durchschnittswerte für Graphen berechnen
+    dates = []
+    titles = []
+    avg_correct_counts = []
+    avg_skill_levels = []
+
+    for hw in homework_list:
+        # Datum und Titel erfassen
+        date_created = hw['date_created']
+        if isinstance(date_created, str):  # Wenn es ein String ist
+            date_created = datetime.strptime(date_created, '%Y-%m-%d')  # Format anpassen
+
+        dates.append(date_created.strftime('%Y-%m-%d'))
+        titles.append(hw['title'])
+
+        # Durchschnitt richtige Antworten
+        avg_correct = conn.execute(
+            '''
+            SELECT ROUND(AVG(correct_count), 0) AS avg_correct
+            FROM HomeworkResults
+            WHERE homework_id = ?
+            ''', (hw['id'],)
+        ).fetchone()['avg_correct'] or 0
+        avg_correct_counts.append(avg_correct)
+
+        # Durchschnitt Skill Level
+        avg_skill = conn.execute(
+            '''
+            SELECT ROUND(AVG(class_skill_level), 0) AS avg_skill
+            FROM ClassMembers
+            JOIN HomeworkResults ON ClassMembers.student_id = HomeworkResults.student_id
+            WHERE HomeworkResults.homework_id = ?
+            ''', (hw['id'],)
+        ).fetchone()['avg_skill'] or 0
+        avg_skill_levels.append(avg_skill)
 
     conn.close()
 
@@ -143,7 +180,11 @@ def class_details_teacher(class_id, teacher_id):
         class_info=class_info,
         students=students,
         teacher_id=teacher_id,
-        homework_list=homework_list
+        homework_list=homework_list,
+        dates=dates,
+        titles=titles,
+        avg_correct_counts=avg_correct_counts,
+        avg_skill_levels=avg_skill_levels
     )
 
 
@@ -193,7 +234,7 @@ def student_details(student_id, class_id, teacher_id):
     from datetime import datetime
     conn = get_db_connection()
 
-    # Schülerinformationen abrufen
+    # Schüler- und Klasseninformationen abrufen
     student_info = conn.execute(
         '''
         SELECT Participants.id, Participants.name, Participants.email, Participants.skill_level,
@@ -209,42 +250,27 @@ def student_details(student_id, class_id, teacher_id):
         conn.close()
         return "Fehler: Schüler existiert nicht oder ist nicht in dieser Klasse.", 404
 
-    # Hausaufgabenergebnisse und Datum abrufen
-    homework_results = conn.execute(
+    # Hausaufgabenergebnisse und Skill-Level-Verlauf abrufen
+    results = conn.execute(
         '''
         SELECT 
             HomeworkResults.correct_count, 
             HomeworkResults.date_submitted,
-            Homework.title
-        FROM HomeworkResults
-        JOIN Homework ON HomeworkResults.homework_id = Homework.id
-        WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
-        ORDER BY HomeworkResults.date_submitted ASC
-        ''',
-        (student_id, class_id)
-    ).fetchall()
-
-    # Skill-Level-Verlauf abrufen
-    skill_history = conn.execute(
-        '''
-        SELECT 
-            HomeworkResults.date_submitted, 
+            Homework.title,
             ClassMembers.class_skill_level
         FROM HomeworkResults
         JOIN Homework ON HomeworkResults.homework_id = Homework.id
-        JOIN ClassMembers ON Homework.class_id = ClassMembers.class_id
+        JOIN ClassMembers ON HomeworkResults.student_id = ClassMembers.student_id
         WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
         ORDER BY HomeworkResults.date_submitted ASC
         ''',
         (student_id, class_id)
     ).fetchall()
 
-    # Daten für den Fragen-Fortschritt aufbereiten
-    dates = []
-    titles = []
-    correct_counts = []
+    # Initialisiere leere Listen für Graphendaten
+    dates, titles, correct_counts, skill_levels = [], [], [], []
 
-    for result in homework_results:
+    for result in results:
         # Datum umwandeln, falls nötig
         try:
             date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
@@ -254,21 +280,15 @@ def student_details(student_id, class_id, teacher_id):
 
         titles.append(result['title'])
         correct_counts.append(result['correct_count'])
+        skill_levels.append(result['class_skill_level'])
 
     # Durchschnitt richtiger Antworten
     mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
 
-    # Daten für Skill-Level-Verlauf aufbereiten
-    skill_dates = []
-    skill_levels = []
-
-    for entry in skill_history:
-        try:
-            skill_date = datetime.strptime(entry['date_submitted'], '%Y-%m-%d')
-        except (ValueError, TypeError):
-            skill_date = entry['date_submitted']
-        skill_dates.append(skill_date.strftime('%Y-%m-%d'))
-        skill_levels.append(entry['class_skill_level'])
+    # **Wichtiger Fix für JSON-Kompatibilität**
+    # Falls keine Daten vorhanden sind, initialisiere leere Listen
+    skill_dates = dates if dates else []
+    skill_levels = skill_levels if skill_levels else []
 
     conn.close()
 
@@ -281,10 +301,9 @@ def student_details(student_id, class_id, teacher_id):
         titles=titles,
         correct_counts=correct_counts,
         mean_correct=mean_correct,
-        skill_dates=skill_dates,
-        skill_levels=skill_levels
+        skill_dates=skill_dates,  # Fix hinzugefügt
+        skill_levels=skill_levels  # Fix hinzugefügt
     )
-
 
 
 

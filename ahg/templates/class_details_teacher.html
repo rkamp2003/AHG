@@ -47,6 +47,20 @@
         {% endfor %}
     </ul>
 
+    <h3>Fortschritt der Klasse</h3>
+    <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
+        <!-- Durchschnittliche richtige Antworten -->
+        <div style="flex: 1; max-width: 50%; height: 300px;">
+            <canvas id="classProgressChart"></canvas>
+        </div>
+        <!-- Durchschnittliches Skill Level -->
+        <div style="flex: 1; max-width: 50%; height: 300px;">
+            <canvas id="classSkillChart"></canvas>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 
     <!-- Formular für neue Hausaufgabe -->
     <h3>Neue Hausaufgabe erstellen</h3>
@@ -60,5 +74,83 @@
         <textarea id="description" name="description" required></textarea>
         <button type="submit">Hausaufgabe erstellen</button>
     </form>
+
+    <script>
+        // Durchschnitt richtige Antworten
+        const correctCtx = document.getElementById('classCorrectChart').getContext('2d');
+        const correctData = {
+            labels: {{ dates | tojson }},
+            datasets: [{
+                label: 'Ø richtige Antworten',
+                data: {{ avg_correct_counts | tojson }},
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        };
+        const correctConfig = {
+            type: 'line',
+            data: correctData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    title: {
+                        display: true,
+                        text: 'Ø richtige Antworten pro Hausaufgabe',
+                        font: { size: 20 }
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Datum' } },
+                    y: { min: 0, max: 10, stepSize: 1, title: { display: true, text: 'Ø richtige Antworten' } }
+                }
+            }
+        };
+        new Chart(correctCtx, correctConfig);
+    
+        // Durchschnitt Skill Level
+        const skillCtx = document.getElementById('classSkillChart').getContext('2d');
+        const skillData = {
+            labels: {{ dates | tojson }},
+            datasets: [{
+                label: 'Ø Skill Level',
+                data: {{ avg_skill_levels | tojson }},
+                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        };
+        const skillConfig = {
+            type: 'line',
+            data: skillData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    title: {
+                        display: true,
+                        text: 'Ø Skill Level pro Hausaufgabe',
+                        font: { size: 20 }
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Datum' } },
+                    y: { min: 1, max: 10, stepSize: 1, title: { display: true, text: 'Ø Skill Level' } }
+                }
+            }
+        };
+        new Chart(skillCtx, skillConfig);
+    </script>
 </body>
 </html>
