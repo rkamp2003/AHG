@@ -49,15 +49,14 @@
 
     <h3>Fortschritt der Klasse</h3>
     <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
-        <!-- Durchschnittliche richtige Antworten -->
         <div style="flex: 1; max-width: 50%; height: 300px;">
             <canvas id="classProgressChart"></canvas>
         </div>
-        <!-- Durchschnittliches Skill Level -->
         <div style="flex: 1; max-width: 50%; height: 300px;">
             <canvas id="classSkillChart"></canvas>
         </div>
     </div>
+    
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -76,8 +75,16 @@
     </form>
 
     <script>
+        console.log("Dates:", {{ dates | tojson }});
+        console.log("Titles:", {{ titles | tojson }});
+        console.log("Avg Correct Counts:", {{ avg_correct_counts | tojson }});
+        console.log("Avg Skill Levels:", {{ avg_skill_levels | tojson }});
+    </script>
+    
+
+    <script>
         // Durchschnitt richtige Antworten
-        const correctCtx = document.getElementById('classCorrectChart').getContext('2d');
+        const correctCtx = document.getElementById('classProgressChart').getContext('2d');
         const correctData = {
             labels: {{ dates | tojson }},
             datasets: [{
@@ -104,17 +111,36 @@
                         display: true,
                         text: 'Ø richtige Antworten pro Hausaufgabe',
                         font: { size: 20 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                // Zeigt den Titel der Hausaufgabe als Tooltip-Titel
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Titel aus der Python-Vorlage
+                            },
+                            label: function(tooltipItem) {
+                                return `Ø richtige Antworten: ${tooltipItem.raw}`; // Zeigt die Durchschnittswerte
+                            }
+                        }
                     }
                 },
                 scales: {
-                    x: { title: { display: true, text: 'Datum' } },
-                    y: { min: 0, max: 10, stepSize: 1, title: { display: true, text: 'Ø richtige Antworten' } }
+                    x: { 
+                        title: { display: true, text: 'Datum' }
+                    },
+                    y: { 
+                        min: 0, 
+                        max: 10, 
+                        stepSize: 1, 
+                        title: { display: true, text: 'Ø richtige Antworten' } 
+                    }
                 }
             }
         };
         new Chart(correctCtx, correctConfig);
-    
-        // Durchschnitt Skill Level
+
+
         const skillCtx = document.getElementById('classSkillChart').getContext('2d');
         const skillData = {
             labels: {{ dates | tojson }},
@@ -142,15 +168,35 @@
                         display: true,
                         text: 'Ø Skill Level pro Hausaufgabe',
                         font: { size: 20 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                // Zeigt den Titel der Hausaufgabe als Tooltip-Titel
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Titel aus der Python-Vorlage
+                            },
+                            label: function(tooltipItem) {
+                                return `Ø Skill Level: ${tooltipItem.raw}`; // Zeigt den Durchschnitt
+                            }
+                        }
                     }
                 },
                 scales: {
-                    x: { title: { display: true, text: 'Datum' } },
-                    y: { min: 1, max: 10, stepSize: 1, title: { display: true, text: 'Ø Skill Level' } }
+                    x: { 
+                        title: { display: true, text: 'Datum' }
+                    },
+                    y: { 
+                        min: 1, 
+                        max: 10, 
+                        stepSize: 1, 
+                        title: { display: true, text: 'Ø Skill Level' } 
+                    }
                 }
             }
         };
         new Chart(skillCtx, skillConfig);
+
     </script>
 </body>
 </html>
