@@ -97,8 +97,8 @@ a:hover {
 
 .autocomplete-container {
     position: relative;
-    display: flex; /* Verwenden Sie flexbox für bessere Kontrolle */
-    align-items: center; /* Zentriert sowohl Button als auch Input vertikal */
+    display: flex; 
+    align-items: center; 
     justify-content: center;
 }
 
@@ -108,7 +108,7 @@ input[type="text"] {
     margin: 0;
     border: 1px solid #ddd;
     border-radius: 5px;
-    height: 40px; /* Einheitliche Höhe */
+    height: 40px; 
     box-sizing: border-box;
 }
 
@@ -130,7 +130,7 @@ button[type="submit"]:hover {
 }
 
 .autocomplete-suggestions {
-    width: 300px; /* Entspricht der Breite des Eingabefelds */
+    width: 300px; 
     margin: 0;
     padding: 0;
     list-style: none;
@@ -140,7 +140,7 @@ button[type="submit"]:hover {
     background-color: #fff;
     box-shadow: 0 3px 6px rgba(0,0,0,0.1);
     position: absolute;
-    top: 100%; /* Direkt unter dem Eingabefeld */
+    top: 100%; 
     left: 0;
     z-index: 1000;
 }
@@ -163,8 +163,8 @@ button[type="submit"]:hover {
     list-style-type: none;
     padding: 0;
     max-width: 600px;
-    margin: 0 auto; /* Zentriert den Container horizontal */
-    text-align: left; /* Setzt Ausrichtung im Textbereich */
+    margin: 0 auto; 
+    text-align: left; 
 }
 
 .info-list li {
@@ -182,8 +182,8 @@ form {
     border-radius: 10px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     max-width: 500px;
-    margin: 20px auto; /* Zentriert das Formular horizontal */
-    text-align: center; /* Zentriert die Inhalte innerhalb des Formulars */
+    margin: 20px auto; 
+    text-align: center; 
 }
 
 .submit-button, button[type="submit"] {
@@ -241,7 +241,7 @@ p {
     position: relative;
     max-width: 800px;
     margin: 20px auto;
-    height: 400px; /* Höhe des Graphen */
+    height: 400px; 
     border: 1px solid #ddd;
     border-radius: 10px;
     background-color: #fff;

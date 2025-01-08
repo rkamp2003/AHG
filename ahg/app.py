@@ -1026,7 +1026,6 @@ def toggle_homework_status(homework_id):
     conn.commit()
     conn.close()
 
-    # Zurück zur Bearbeitungsansicht
     return redirect(url_for('edit_homework', homework_id=homework_id))
 
 
