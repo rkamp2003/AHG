@@ -37,12 +37,33 @@
                 <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
                     {{ homework['title'] }} (Erstellt am: {{ homework['date_created'] }})
                 </a>
+                - <strong>Status:</strong>
+                {% if homework['status'] == 'published' %}
+                    <span style="color: green;">Veröffentlicht</span>
+                {% else %}
+                    <span style="color: orange;">Entwurf</span>
+                {% endif %}
             </li>
         {% endfor %}
     </ul>
 
+    <h3>Fortschritt der Klasse</h3>
+    <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
+        <div style="flex: 1; max-width: 50%; height: 300px;">
+            <canvas id="classProgressChart"></canvas>
+        </div>
+        <div style="flex: 1; max-width: 50%; height: 300px;">
+            <canvas id="classSkillChart"></canvas>
+        </div>
+    </div>
+    
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+
     <!-- Formular für neue Hausaufgabe -->
     <h3>Neue Hausaufgabe erstellen</h3>
+    <p>In "Beschreibung" allgemeines Thema der HA</p>
     <form action="/create_homework" method="post">
         <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
         <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
@@ -52,5 +73,130 @@
         <textarea id="description" name="description" required></textarea>
         <button type="submit">Hausaufgabe erstellen</button>
     </form>
+
+    <script>
+        console.log("Dates:", {{ dates | tojson }});
+        console.log("Titles:", {{ titles | tojson }});
+        console.log("Avg Correct Counts:", {{ avg_correct_counts | tojson }});
+        console.log("Avg Skill Levels:", {{ avg_skill_levels | tojson }});
+    </script>
+    
+
+    <script>
+        // Durchschnitt richtige Antworten
+        const correctCtx = document.getElementById('classProgressChart').getContext('2d');
+        const correctData = {
+            labels: {{ dates | tojson }},
+            datasets: [{
+                label: 'Ø richtige Antworten',
+                data: {{ avg_correct_counts | tojson }},
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        };
+        const correctConfig = {
+            type: 'line',
+            data: correctData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    title: {
+                        display: true,
+                        text: 'Ø richtige Antworten pro Hausaufgabe',
+                        font: { size: 20 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                // Zeigt den Titel der Hausaufgabe als Tooltip-Titel
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Titel aus der Python-Vorlage
+                            },
+                            label: function(tooltipItem) {
+                                return `Ø richtige Antworten: ${tooltipItem.raw}`; // Zeigt die Durchschnittswerte
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        title: { display: true, text: 'Datum' }
+                    },
+                    y: { 
+                        min: 0, 
+                        max: 10, 
+                        stepSize: 1, 
+                        title: { display: true, text: 'Ø richtige Antworten' } 
+                    }
+                }
+            }
+        };
+        new Chart(correctCtx, correctConfig);
+
+
+        const skillCtx = document.getElementById('classSkillChart').getContext('2d');
+        const skillData = {
+            labels: {{ dates | tojson }},
+            datasets: [{
+                label: 'Ø Skill Level',
+                data: {{ avg_skill_levels | tojson }},
+                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        };
+        const skillConfig = {
+            type: 'line',
+            data: skillData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    title: {
+                        display: true,
+                        text: 'Ø Skill Level pro Hausaufgabe',
+                        font: { size: 20 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                // Zeigt den Titel der Hausaufgabe als Tooltip-Titel
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Titel aus der Python-Vorlage
+                            },
+                            label: function(tooltipItem) {
+                                return `Ø Skill Level: ${tooltipItem.raw}`; // Zeigt den Durchschnitt
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        title: { display: true, text: 'Datum' }
+                    },
+                    y: { 
+                        min: 1, 
+                        max: 10, 
+                        stepSize: 1, 
+                        title: { display: true, text: 'Ø Skill Level' } 
+                    }
+                }
+            }
+        };
+        new Chart(skillCtx, skillConfig);
+
+    </script>
 </body>
 </html>

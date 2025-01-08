@@ -15,23 +15,32 @@
     <h3>Informationen:</h3>
     <ul class="info-list">
         <li>Email: {{ student_info['email'] }}</li>
-        <li>Skill Level: {{ student_info['skill_level'] }}</li>
+        <li>Skill Level (Klasse): {{ student_info['class_skill_level'] }}</li>
         <li> Durchschnitt richtiger Antworten pro Hausaufgabe: {{ mean_correct }}</li>
     </ul>
 
-    <h2>Fortschritt über die Zeit</h2>
-    <div class="chart-container">
-        <canvas id="progressChart"></canvas>
+    <h3>Fortschritt über die Zeit</h3>
+    <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
+        <!-- Chart für richtige Antworten -->
+        <div style="flex: 1; max-width: 50%; height: 300px;">
+            <canvas id="progressChart"></canvas>
+        </div>
+        <!-- Chart für Skill Level -->
+        <div style="flex: 1; max-width: 50%; height: 300px;">
+            <canvas id="skillChart"></canvas>
+        </div>
     </div>
 
+     <!-- JavaScript für die Diagramme -->
     <script>
+        // Fortschritt richtige Antworten
         const ctx = document.getElementById('progressChart').getContext('2d');
         const data = {
-            labels: {{ dates | tojson }}, // X-Achse: Datum
+            labels: {{ dates | tojson }},
             datasets: [
                 {
                     label: 'Richtige Antworten',
-                    data: {{ correct_counts | tojson }}, // Y-Achse: Richtige Antworten
+                    data: {{ correct_counts | tojson }},
                     borderColor: 'rgba(75, 192, 192, 1)',
                     backgroundColor: 'rgba(75, 192, 192, 0.2)',
                     borderWidth: 2,
@@ -42,77 +51,115 @@
                 }
             ]
         };
-    
-        // Tooltips erweitern, um Titel anzuzeigen
+
         const config = {
             type: 'line',
             data: data,
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
                     legend: {
                         position: 'top',
                         labels: {
-                            font: {
-                                size: 14
-                            }
+                            font: { size: 14 }
                         }
                     },
                     title: {
                         display: true,
-                        text: 'Fortschritt der richtigen Antworten',
-                        font: {
-                            size: 20
-                        }
+                        text: 'Richtige Antworten über Zeit',
+                        font: { size: 20 }
                     },
-                    tooltip: {
+                    tooltip: {  // Tooltip für richtige Antworten
                         callbacks: {
+                            title: function(tooltipItems) {
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Hausaufgabentitel anzeigen
+                            },
                             label: function(tooltipItem) {
-                                // Füge Titel der Hausaufgabe zum Tooltip hinzu
-                                const title = {{ titles | tojson }}[tooltipItem.dataIndex];
-                                const correctAnswers = tooltipItem.raw;
-                                return `${title}: ${correctAnswers} richtige Antworten`;
+                                return `Richtige Antworten: ${tooltipItem.raw}`; // Richtige Antworten anzeigen
                             }
                         }
                     }
                 },
                 scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Datum',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        ticks: {
-                            font: {
-                                size: 12
-                            }
-                        }
+                    x: { 
+                        title: { display: true, text: 'Datum' } 
                     },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Richtige Antworten',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        ticks: {
-                            stepSize: 1,
-                            font: {
-                                size: 12
-                            }
-                        },
-                        beginAtZero: true
+                    y: { 
+                        title: { display: true, text: 'Richtige Antworten' }, 
+                        min: 0, 
+                        max: 10, 
+                        ticks: { stepSize: 1 } 
                     }
                 }
             }
         };
-    
         new Chart(ctx, config);
-    </script>    
-</div>
+
+        // Fortschritt Skill Level
+        const skillCtx = document.getElementById('skillChart').getContext('2d');
+        const skillData = {
+            labels: {{ skill_dates | tojson }},
+            datasets: [
+                {
+                    label: 'Skill Level',
+                    data: {{ skill_levels | tojson }},
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
+        };
+
+        const skillConfig = {
+            type: 'line',
+            data: skillData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Class Skill Level über Zeit',
+                        font: { size: 20 }
+                    },
+                    tooltip: {  // Tooltip für Skill Level
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Hausaufgabentitel anzeigen
+                            },
+                            label: function(tooltipItem) {
+                                return `Skill Level: ${tooltipItem.raw}`; // Skill Level anzeigen
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        title: { display: true, text: 'Datum' } 
+                    },
+                    y: { 
+                        title: { display: true, text: 'Skill Level' }, 
+                        min: 1, 
+                        max: 10, 
+                        ticks: { stepSize: 1 } 
+                    }
+                }
+            }
+        };
+        new Chart(skillCtx, skillConfig);
+    </script>
 </body>
 </html>

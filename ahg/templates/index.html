@@ -3,84 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hausaufgaben-Tool</title>
+    <title>Homework Tool</title> 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Willkommen im Hausaufgaben-Tool</h1>
-        <h2>Wer sind Sie?</h2>
+        <h1>Welcome to the Homework Tool</h1> 
+        <h2>Who are you?</h2> 
         <div id="user-type-selection">
-            <button onclick="showTeacherOptions()">Ich bin Lehrer</button>
-            <button onclick="showStudentOptions()">Ich bin Schüler</button>
+            <button onclick="showTeacherOptions()">I am a Teacher</button> 
+            <button onclick="showStudentOptions()">I am a Student</button> 
         </div>
         
         <div id="teacher-options" style="display:none;">
-            <h3>Lehrer</h3>
-            <button onclick="showTeacherLogin()">Anmelden</button>
-            <button onclick="showTeacherRegister()">Registrieren</button>
-            <button class="back-button" onclick="zurueck()">Zurück</button>
+            <h3>Teacher</h3> 
+            <button onclick="showTeacherLogin()">Login</button> 
+            <button onclick="showTeacherRegister()">Register</button> 
+            <button class="back-button" onclick="zurueck()">Back</button> 
         </div>
         
         <div id="student-options" style="display:none;">
-            <h3>Schüler</h3>
-            <button onclick="showStudentLogin()">Anmelden</button>
-            <button onclick="showStudentRegister()">Registrieren</button>
-            <button class="back-button" onclick="zurueck()">Zurück</button>
+            <h3>Student</h3> 
+            <button onclick="showStudentLogin()">Login</button> 
+            <button onclick="showStudentRegister()">Register</button> 
+            <button class="back-button" onclick="zurueck()">Back</button> 
         </div>
         
         <div id="teacher-login" style="display:none;">
-            <h3>Lehrer Login</h3>
+            <h3>Teacher Login</h3> 
             <form action="/login_teacher" method="post">
-                <label for="teacher_email">E-Mail:</label>
+                <label for="teacher_email">Email:</label> 
                 <input type="email" id="teacher_email" name="email" required>
-                <label for="teacher_password">Passwort:</label>
+                <label for="teacher_password">Password:</label> 
                 <input type="password" id="teacher_password" name="password" required>
-                <button type="submit" class="submit-button">Anmelden</button>
+                <button type="submit" class="submit-button">Login</button> 
             </form>
-            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+            <button class="back-button" onclick="zurueckZuOptions()">Back</button> 
         </div>
         
         <div id="teacher-register" style="display:none;">
-            <h3>Lehrer Registrierung</h3>
+            <h3>Teacher Registration</h3> 
             <form action="/register_teacher" method="post">
                 <label for="teacher_name">Name:</label>
                 <input type="text" id="teacher_name" name="name" required>
-                <label for="teacher_email">E-Mail:</label>
+                <label for="teacher_email">Email:</label> 
                 <input type="email" id="teacher_email" name="email" required>
-                <label for="teacher_password">Passwort:</label>
+                <label for="teacher_password">Password:</label> 
                 <input type="password" id="teacher_password" name="password" required>
-                <button type="submit" class="submit-button">Registrieren</button>
+                <button type="submit" class="submit-button">Register</button> 
             </form>
-            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+            <button class="back-button" onclick="zurueckZuOptions()">Back</button> 
         </div>
         
         <div id="student-login" style="display:none;">
-            <h3>Schüler Login</h3>
+            <h3>Student Login</h3> 
             <form action="/login_student" method="post">
-                <label for="student_email">E-Mail:</label>
+                <label for="student_email">Email:</label> 
                 <input type="email" id="student_email" name="email" required>
-                <label for="student_password">Passwort:</label>
+                <label for="student_password">Password:</label> 
                 <input type="password" id="student_password" name="password" required>
-                <button type="submit" class="submit-button">Anmelden</button>
+                <button type="submit" class="submit-button">Login</button> 
             </form>
-            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+            <button class="back-button" onclick="zurueckZuOptions()">Back</button> 
         </div>
         
         <div id="student-register" style="display:none;">
-            <h3>Schüler Registrierung</h3>
+            <h3>Student Registration</h3> 
             <form action="/register_student" method="post">
                 <label for="student_name">Name:</label>
                 <input type="text" id="student_name" name="name" required>
-                <label for="student_email">E-Mail:</label>
+                <label for="student_email">Email:</label>
                 <input type="email" id="student_email" name="email" required>
-                <label for="student_password">Passwort:</label>
+                <label for="student_password">Password:</label>
                 <input type="password" id="student_password" name="password" required>
-                <button type="submit" class="submit-button">Registrieren</button>
+                <button type="submit" class="submit-button">Register</button> 
             </form>
-            <button class="back-button" onclick="zurueckZuOptions()">Zurück</button>
+            <button class="back-button" onclick="zurueckZuOptions()">Back</button> 
         </div>
-
     </div>
     <script>
         let currentRole = ''; // Variable zum Festhalten, ob Lehrer oder Schüler

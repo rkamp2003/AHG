@@ -16,7 +16,7 @@
     <ul class="info-list">
         <li>Name: {{ student['name'] }}</li>
         <li>Email: {{ student['email'] }}</li>
-        <li>Skill Level : {{ student['skill_level'] }}</li>
+        <li>Skill Level: {{ student['skill_level'] }}</li>
     </ul>
 
     <h2>Ihre Kurse:</h2>
@@ -24,11 +24,78 @@
         {% for class in joined_classes %}
             <li>
                 <a href="/class_details_student/{{ class['id'] }}/{{ student['id'] }}">
-                    {{ class['class_name'] }} - Fach: {{ class['subject'] }} - Lehrer: {{ class['teacher_name'] }}
+                    {{ class['class_name'] }} - Fach: {{ class['subject'] }} - Lehrer: {{ class['teacher_name'] }} - Skill Level (Klasse): {{ class['class_skill_level'] }}
                 </a>
             </li>
         {% endfor %}
     </ul>
+
+    <h3>Verlauf des Gesamtskill-Levels</h3>
+    <div class="chart-container" style="max-width: 800px;">
+        <canvas id="totalSkillChart"></canvas>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+
+        const ctx = document.getElementById('totalSkillChart').getContext('2d');
+        const data = {
+            labels: {{ dates | tojson }},
+            datasets: [{
+                label: 'Skill Level',
+                data: {{ skill_levels | tojson }},
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        };
+
+        const config = {
+            type: 'line',
+            data: data,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    title: { 
+                        display: true, 
+                        text: 'Skill Level Verlauf',
+                        font: { size: 20 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                const index = tooltipItems[0].dataIndex;
+                                const homeworkTitle = {{ titles | tojson }}[index]; // Titel der HA
+                                const className = {{ class_names | tojson }}[index]; // Klassenname
+                                return `${homeworkTitle} - ${className}`; // Titel und Klassenname kombinieren
+                            },
+                            label: function(tooltipItem) {
+                                return `Skill Level: ${tooltipItem.raw}`; // Skill Level-Wert
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Datum' } },
+                    y: { 
+                        min: 1, 
+                        max: 10, 
+                        stepSize: 1,
+                        title: { display: true, text: 'Skill Level' } 
+                    }
+                }
+            }
+        };
+
+        new Chart(ctx, config);
+
+    </script>
 
     <h3>Einer Klasse beitreten</h3>
     <form action="/join_class" method="post" onsubmit="return checkSelection()" style="text-align: center;">
@@ -46,11 +113,11 @@
         // Verwenden Sie |tojson, indem Sie sicherstellen, dass all_classes korrekt in JSON umgewandelt wird
         const allClasses = {{ all_classes|tojson }};
         const suggestionsContainer = document.getElementById('suggestions-container');
-    
+
         function showSuggestions(query) {
             suggestionsContainer.innerHTML = '';
             if (query.trim().length === 0) return;
-    
+
             const matchingClasses = allClasses.filter(c => c.class_name.toLowerCase().includes(query.toLowerCase()) || c.id.toString().includes(query));
             matchingClasses.forEach(classItem => {
                 const suggestionItem = document.createElement('li');
@@ -60,13 +127,13 @@
                 suggestionsContainer.appendChild(suggestionItem);
             });
         }
-    
+
         function selectClass(id, name) {
             document.getElementById('class_search').value = name;
             document.getElementById('class_id').value = id;
             suggestionsContainer.innerHTML = '';
         }
-    
+
         function checkSelection() {
             const classId = document.getElementById('class_id').value;
             return classId !== '';
