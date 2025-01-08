@@ -37,9 +37,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        console.log("Dates:", {{ dates | tojson }});
-        console.log("Titles:", {{ titles | tojson }});
-        console.log("Skill Levels:", {{ skill_levels | tojson }});
 
         const ctx = document.getElementById('totalSkillChart').getContext('2d');
         const data = {
@@ -74,10 +71,12 @@
                         callbacks: {
                             title: function(tooltipItems) {
                                 const index = tooltipItems[0].dataIndex;
-                                return {{ titles | tojson }}[index]; // Titel anzeigen
+                                const homeworkTitle = {{ titles | tojson }}[index]; // Titel der HA
+                                const className = {{ class_names | tojson }}[index]; // Klassenname
+                                return `${homeworkTitle} - ${className}`; // Titel und Klassenname kombinieren
                             },
                             label: function(tooltipItem) {
-                                return `Skill Level: ${tooltipItem.raw}`; // Skill-Level-Wert
+                                return `Skill Level: ${tooltipItem.raw}`; // Skill Level-Wert
                             }
                         }
                     }
@@ -95,6 +94,7 @@
         };
 
         new Chart(ctx, config);
+
     </script>
 
     <h3>Einer Klasse beitreten</h3>

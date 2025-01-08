@@ -44,7 +44,7 @@ def login_teacher():
         session['teacher_id'] = int(teacher['id'])
         return redirect(url_for('teacher_dashboard'))
     else:
-        return "Anmeldedaten ungültig. Bitte versuchen Sie es erneut."
+        return "Login data invalid. Please try again."
 
 
     

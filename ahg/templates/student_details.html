@@ -69,6 +69,17 @@
                         display: true,
                         text: 'Richtige Antworten über Zeit',
                         font: { size: 20 }
+                    },
+                    tooltip: {  // Tooltip für richtige Antworten
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Hausaufgabentitel anzeigen
+                            },
+                            label: function(tooltipItem) {
+                                return `Richtige Antworten: ${tooltipItem.raw}`; // Richtige Antworten anzeigen
+                            }
+                        }
                     }
                 },
                 scales: {
@@ -122,6 +133,17 @@
                         display: true,
                         text: 'Class Skill Level über Zeit',
                         font: { size: 20 }
+                    },
+                    tooltip: {  // Tooltip für Skill Level
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                const index = tooltipItems[0].dataIndex;
+                                return {{ titles | tojson }}[index]; // Hausaufgabentitel anzeigen
+                            },
+                            label: function(tooltipItem) {
+                                return `Skill Level: ${tooltipItem.raw}`; // Skill Level anzeigen
+                            }
+                        }
                     }
                 },
                 scales: {
