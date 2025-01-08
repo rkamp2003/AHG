@@ -493,7 +493,7 @@ def class_details_student(class_id, student_id):
         SELECT Homework.id, Homework.title, Homework.date_created,
             CASE 
                 WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Done'
-                ELSE 'Offen'
+                ELSE 'Open'
             END AS status
         FROM Homework
         LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id
