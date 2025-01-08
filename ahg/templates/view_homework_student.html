@@ -1,25 +1,25 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Hausaufgabe (Schüleransicht)</title>
+    <title>Homework (Student View)</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="top-buttons" style="display: flex; justify-content: flex-start;">
-        <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Zurück zur Klasse</a>
+        <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Back to Class</a>
     </div>
 
     <h1>{{ homework['title'] }}</h1>
-    <h3>{{ class_info.class_name }} - {{ class_info.subject }} (Lehrer: {{ class_info.teacher_name }})</h3>
-    <p>Erstellt am: {{ homework['date_created'] }}</p>
+    <h3>{{ class_info.class_name }} - {{ class_info.subject }} (Teacher: {{ class_info.teacher_name }})</h3>
+    <p>Created on: {{ homework['date_created'] }}</p>
 
     <form id="homework-form">
         <ol>
             {% for question in questions %}
                 <li>
                     <p>{{ question['question'] }} 
- <em>({{ question['taxonomy'] }})</em></p>
+                    <br> <em>({{ question['taxonomy'] }})</em></p>
                     <ul>
                         {% for option in question['options'] %}
                             <li>
@@ -35,9 +35,9 @@
             {% endfor %}
         </ol>
 
-        <button id="check-button" type="button" onclick="checkAnswers()">Überprüfen</button>
-        {% if homework_status == "Offen" %}
-            <button id="submit-button" type="button" style="display: none;" onclick="submitHomework()">Abschicken</button>
+        <button id="check-button" type="button" onclick="checkAnswers()">Check</button>
+        {% if homework_status == "Open" %}
+            <button id="submit-button" type="button" style="display: none;" onclick="submitHomework()">Submit</button>
         {% endif %}
     </form>
 
@@ -67,25 +67,23 @@
         
                 if (userAnswer === undefined) {
                     const correctText = questions[questionIndex].options[correctAnswer].option;
-                    resultSpan.innerText = `❌ Falsch! Keine Antwort ausgewählt. Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
+                    resultSpan.innerText = `❌ Wrong! No answer selected. Correct answer: ${correctText}. Explanation: ${explanations[questionIndex]}`;
                     incorrectCount++;
                 } else if (userAnswer === correctAnswer) {
-                    resultSpan.innerText = '✔️ Richtig!';
+                    resultSpan.innerText = '✔️ Correct!';
                     correctCount++;
                 } else {
                     const correctText = questions[questionIndex].options[correctAnswer].option;
-                    resultSpan.innerText = `❌ Falsch! Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
+                    resultSpan.innerText = `❌ Wrong! Correct answer: ${correctText}. Explanation: ${explanations[questionIndex]}`;
                     incorrectCount++;
                 }
             }
         
-            // Button zum Abschicken nur anzeigen, wenn die Hausaufgabe noch offen ist
-            if ("{{ homework_status }}" == "Offen") {
+            if ("{{ homework_status }}" == "Open") {
                 document.getElementById('check-button').style.display = 'none';
                 document.getElementById('submit-button').style.display = 'inline-block';
             }
         
-            // Ergebnisse für Abschicken speichern
             window.homeworkResults = { correctCount, incorrectCount };
         }
         
@@ -104,22 +102,23 @@
                     incorrect_count: results.incorrectCount
                 })
             })
-            .then(response => response.json())  // Antwort in JSON umwandeln
+            .then(response => response.json())
             .then(data => {
                 if (data.message) {
                     const message = `
                         ${data.message}
-                        Neues Klassenskilllevel: ${data.class_skill_level}
-                        Neues Gesamtskilllevel: ${data.overall_skill_level}
+                        Correct Answers: ${results.correctCount}
+                        New Class Skill Level: ${data.class_skill_level}
+                        New Overall Skill Level: ${data.overall_skill_level}
                     `;
-                    alert(message);  // Nachricht anzeigen
+                    alert(message);
                     window.location.href = `/class_details_student/{{ class_info['id'] }}/{{ student_id }}`;
                 } else {
-                    alert('Fehler beim Abschicken der Hausaufgabe.');
+                    alert('Error submitting homework.');
                 }
             })
             .catch(error => {
-                alert(`Fehler beim Abschicken der Hausaufgabe: ${error}`);
+                alert(`Error submitting homework: ${error}`);
             });
         }
     </script>

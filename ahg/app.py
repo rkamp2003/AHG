@@ -603,20 +603,20 @@ def create_homework():
 
     # Generiere Hausaufgaben mit ChatGPT
     prompt = f"""
-    Erstelle Hausaufgabe für das Fach {class_info['subject']} in der Jahrgangsstufe {class_info['grade_level']}:
-    Zur Referenz: Schüler haben ein Skill_level zwischen 1 und 10, wobei 10 das beste/schwierigste ist.
+    Create homework for the subject {class_info['subject']} in the grade {class_info['grade_level']}:
+    For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
 
-    Hausaufgabenbeschreibung: {description}
+    Homework description: {description}
 
-    Orientiert an Blooms Taxonomy sollen die Fragen in die Aufgabentypen Remembering Understanding Applying Analyzing Evaluating Creating aufgeteilt werden.
-    1. Schwierigkeitsgrad (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analyzing
-    2. Schwierigkeitsgrad (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analyzing
-    3. Schwierigkeitsgrad (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analyzing
-    Die Hausaufgabe sollte ausschließlich Multiple-Choice-Fragen enthalten. 
-    Jede Frage sollte vier Antwortmöglichkeiten haben und die richtige Antwort sollte als Index (0-basiert) zurückgegeben werden.
+    Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering Understanding Applying Analysing Evaluating Creating.
+    1st level of difficulty (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analysing
+    2nd level of difficulty (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analysing
+    3rd level of difficulty (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analysing
+    The homework should only contain multiple-choice questions. 
+    Each question should have four possible answers and the correct answer should be returned as an index (0-based).
 
-    Erstelle insgesamt 30 Fragen: 10 Fragen pro Schwierigkeitsgrad.
-    Bitte nur mit JSON-Inhalt antworten in dem folgenden Format:
+    Create a total of 30 questions: 10 questions per difficulty level.
+    Please answer only with JSON content in the following format:
     [
         {{"skill_level": 1, "questions": [
             {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."}},
@@ -718,7 +718,7 @@ def view_homework_student(homework_id, student_id):
         '''
         SELECT CASE 
                    WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Done'
-                   ELSE 'Offen'
+                   ELSE 'Open'
                END AS status
         FROM Homework
         LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id
@@ -873,7 +873,7 @@ def submit_homework():
         ).fetchone()['class_skill_level']
 
         # Neue Bewertung basierend auf der Leistung
-        if correct_count >= 7:
+        if correct_count > 7:
             class_skill_level = min(10, class_skill_level + 1)  # Erhöhen (max 10)
         elif correct_count < 4:
             class_skill_level = max(1, class_skill_level - 1)  # Senken (min 1)
@@ -927,7 +927,8 @@ def submit_homework():
 
         # Erfolgsmeldung mit neuem Skill Level
         return {
-            "message": "Ergebnisse erfolgreich gespeichert",
+            "message": "Results successfully saved",
+            "correct_count": correct_count,
             "class_skill_level": class_skill_level,
             "overall_skill_level": avg_class_skill
         }, 200
@@ -977,7 +978,7 @@ def edit_homework(homework_id, class_id, teacher_id):
         if 'publish' in request.form:
             if any(count != 10 for count in skill_count.values()):
                 conn.close()
-                return "Eine Hausaufgabe kann nur veröffentlicht werden, wenn sie genau 10 Fragen pro Schwierigkeitsgrad enthält.", 400
+                return "A homework assignment can only be published if it contains exactly 10 questions per level of difficulty.", 400
 
             # Status auf 'published' setzen
             conn.execute('UPDATE Homework SET status = ? WHERE id = ?', ('published', homework_id))

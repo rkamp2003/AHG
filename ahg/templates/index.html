@@ -82,7 +82,7 @@
         </div>
     </div>
     <script>
-        let currentRole = ''; // Variable zum Festhalten, ob Lehrer oder Schüler
+        let currentRole = '';
     
         function showTeacherOptions() {
             currentRole = 'teacher';
@@ -101,12 +101,11 @@
         }
     
         function zurueck() {
-            // Wird genutzt um wieder zur Startauswahl-Option zurückzukehren
             document.getElementById('user-type-selection').style.display = 'block';
             document.getElementById('teacher-options').style.display = 'none';
             document.getElementById('student-options').style.display = 'none';
             hideAllForms();
-            currentRole = ''; // Zurücksetzen der Rolle
+            currentRole = ''
         }
     
         function zurueckZuOptions() {
