@@ -120,7 +120,7 @@
         const skillData = {
             labels: {{ dates | tojson }},
             datasets: [{
-                label: 'Skill Level',
+                label: 'Class Skill Level',
                 data: {{ skill_levels | tojson }},
                 borderColor: 'rgba(54, 162, 235, 1)',
                 backgroundColor: 'rgba(54, 162, 235, 0.2)',
@@ -142,7 +142,7 @@
                     legend: { position: 'top' },
                     title: {
                         display: true,
-                        text: 'Skill Level Over Time',
+                        text: 'Class Skill Level Over Time',
                         font: { size: 20 }
                     },
                     tooltip: {
@@ -152,7 +152,7 @@
                                 return {{ titles | tojson }}[index];
                             },
                             label: function(tooltipItem) {
-                                return `Skill Level: ${tooltipItem.raw}`;
+                                return `Class Skill Level: ${tooltipItem.raw}`;
                             }
                         }
                     }
@@ -165,7 +165,7 @@
                         min: 1, 
                         max: 10, 
                         stepSize: 1, 
-                        title: { display: true, text: 'Skill Level' } 
+                        title: { display: true, text: 'Class Skill Level' } 
                     }
                 }
             }
