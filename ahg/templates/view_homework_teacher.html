@@ -1,32 +1,33 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Hausaufgabe (Lehreransicht)</title>
+    <title>Homework (Teacher View)</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="top-buttons" style="display: flex; justify-content: space-between; align-items: center;">
-        <a href="/class_details_teacher/{{ class_info['id'] }}/{{ teacher_id }}" class="button">Zurück zur Klasse</a>
-        <a href="{{ url_for('edit_homework', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}" class="button">HA bearbeiten</a>
+        <a href="/class_details_teacher/{{ class_info['id'] }}/{{ teacher_id }}" class="button">Back to Class</a>
+        <a href="{{ url_for('edit_homework', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}" class="button">Edit Homework</a>
 
-        <form action="/delete_homework" method="post" style="display:inline;" onsubmit="return confirm('Möchten Sie diese Hausaufgabe wirklich löschen?')">
+        <form action="/delete_homework" method="post" style="display:inline;" onsubmit="return confirm('Do you really want to delete this homework?')">
             <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
             <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
             <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
-            <button type="submit" class="submit-button danger no-background">Hausaufgabe löschen</button>
+            <button type="submit" class="submit-button danger no-background">Delete Homework</button>
         </form>
     </div>
     
 
     <h1>{{ homework['title'] }}</h1>
-    <p>Erstellt am: {{ homework['date_created'] }}</p>
+    <p>Created on: {{ homework['date_created'] }}</p>
 
     <form id="homework-form">
         <ol>
             {% for question in questions %}
                 <li>
-                    <p>{{ question['question'] }} <br> <em>({{ question['taxonomy'] }} - skill_level: {{ question['skill_level'] }})</em></p>
+                    <p>{{ question['question'] }} 
+ <em> <br> ({{ question['taxonomy'] }} - skill_level: {{ question['skill_level'] }})</em></p>
                     <ul>
                         {% for option in question['options'] %}
                             <li>
@@ -42,7 +43,7 @@
             {% endfor %}
         </ol>
 
-        <button type="button" onclick="checkAnswers()">Überprüfen</button>
+        <button type="button" onclick="checkAnswers()">Check</button>
     </form>
 
     <script>
@@ -72,18 +73,17 @@
                 const correctAnswer = parseInt(correctAnswers[questionIndex], 10);
 
                 if (userAnswer === undefined) {
-                    // Handle no selection
-                    const correctText = questions[questionIndex].options[correctAnswer]?.option || "Option nicht gefunden";
-                    resultSpan.innerText = `❌ Falsch! Keine Antwort ausgewählt. Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
+                    const correctText = questions[questionIndex].options[correctAnswer]?.option || "Option not found";
+                    resultSpan.innerText = `❌ Wrong! No answer selected. Correct answer: ${correctText}. Explanation: ${explanations[questionIndex]}`;
                     resultSpan.classList.add('incorrect');
                     resultSpan.classList.remove('correct');
                 } else if (userAnswer === correctAnswer) {
-                    resultSpan.innerText = '✔️ Richtig!';
+                    resultSpan.innerText = '✔️ Correct!';
                     resultSpan.classList.add('correct');
                     resultSpan.classList.remove('incorrect');
                 } else {
-                    const correctText = questions[questionIndex].options[correctAnswer]?.option || "Option nicht gefunden";
-                    resultSpan.innerText = `❌ Falsch! Richtige Antwort: ${correctText}. Erklärung: ${explanations[questionIndex]}`;
+                    const correctText = questions[questionIndex].options[correctAnswer]?.option || "Option not found";
+                    resultSpan.innerText = `❌ Wrong! Correct answer: ${correctText}. Explanation: ${explanations[questionIndex]}`;
                     resultSpan.classList.add('incorrect');
                     resultSpan.classList.remove('correct');
                 }

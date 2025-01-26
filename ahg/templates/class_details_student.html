@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Klassendetails (Schüleransicht)</title>
+    <title>Class Details (Student View)</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -12,22 +12,22 @@
     </div>
     
     <h1>{{ class_info['class_name'] }}</h1>
-    <h2>Fach: {{ class_info['subject'] }}</h2>
-    <h3>Lehrer: {{ class_info['teacher_name'] }}</h3>
+    <h2>Subject: {{ class_info['subject'] }}</h2>
+    <h3>Teacher: {{ class_info['teacher_name'] }}</h3>
 
-    <h3>Ihre Informationen:</h3>
+    <h3>Your Information:</h3>
     <ul class="info-list">
         <li>Name: {{ student['name'] }}</li>
         <li>Email: {{ student['email'] }}</li>
-        <li>Skill Level (Klasse): {{ student['class_skill_level'] }}</li>
+        <li>Skill Level (Class): {{ student['class_skill_level'] }}</li>
     </ul>
 
-    <h3>Hausaufgaben</h3>
+    <h3>Homework</h3>
     <ul class="class-list">
         {% for homework in homework_list %}
             <li>
                 <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
-                    {{ homework['title'] }} - aufbekommen am: {{ homework['date_created'] }} - ({{ homework['status'] }})
+                    {{ homework['title'] }} - assigned on: {{ homework['date_created'] }} - ({{ homework['status'] }})
                 </a>
                 {% if homework['status'] == "Done" %}
                     <span class="completed">✔️</span>
@@ -38,9 +38,9 @@
         {% endfor %}
     </ul>
 
-    <h3>Fortschritt über die Zeit</h3>
+    <h3>Progress Over Time</h3>
     <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
-        <!-- Richtige Antworten -->
+        <!-- Correct Answers -->
         <div style="flex: 1; max-width: 50%; height: 300px;">
             <canvas id="progressChart"></canvas>
         </div>
@@ -50,27 +50,20 @@
         </div>
     </div>
 
-    <!-- Button zum Verlassen der Klasse -->
+    <!-- Button to Leave Class -->
     <form action="/leave_class" method="post">
         <input type="hidden" name="student_id" value="{{ student_id }}">
         <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
-        <button type="submit" class="submit-button danger">Kurs verlassen</button>
+        <button type="submit" class="submit-button danger">Leave Class</button>
     </form>
 
     <script>
-        console.log("Dates:", {{ dates | tojson }});
-        console.log("Titles:", {{ titles | tojson }});
-        console.log("Correct Counts:", {{ correct_counts | tojson }});
-        console.log("Skill Levels:", {{ skill_levels | tojson }});
-    </script>
-
-    <script>
-        // Richtige Antworten
+        // Correct Answers
         const correctCtx = document.getElementById('progressChart').getContext('2d');
         const correctData = {
             labels: {{ dates | tojson }},
             datasets: [{
-                label: 'Richtige Antworten',
+                label: 'Correct Answers',
                 data: {{ correct_counts | tojson }},
                 borderColor: 'rgba(75, 192, 192, 1)',
                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
@@ -92,7 +85,7 @@
                     legend: { position: 'top' },
                     title: {
                         display: true,
-                        text: 'Richtige Antworten über Zeit',
+                        text: 'Correct Answers Over Time',
                         font: { size: 20 }
                     },
                     tooltip: {
@@ -102,20 +95,20 @@
                                 return {{ titles | tojson }}[index];
                             },
                             label: function(tooltipItem) {
-                                return `Richtige Antworten: ${tooltipItem.raw}`;
+                                return `Correct Answers: ${tooltipItem.raw}`;
                             }
                         }
                     }
                 },
                 scales: {
                     x: { 
-                        title: { display: true, text: 'Datum' } 
+                        title: { display: true, text: 'Date' } 
                     },
                     y: { 
                         min: 0, 
                         max: 10, 
                         stepSize: 1, 
-                        title: { display: true, text: 'Richtige Antworten' } 
+                        title: { display: true, text: 'Correct Answers' } 
                     }
                 }
             }
@@ -127,7 +120,7 @@
         const skillData = {
             labels: {{ dates | tojson }},
             datasets: [{
-                label: 'Skill Level',
+                label: 'Class Skill Level',
                 data: {{ skill_levels | tojson }},
                 borderColor: 'rgba(54, 162, 235, 1)',
                 backgroundColor: 'rgba(54, 162, 235, 0.2)',
@@ -149,7 +142,7 @@
                     legend: { position: 'top' },
                     title: {
                         display: true,
-                        text: 'Skill Level über Zeit',
+                        text: 'Class Skill Level Over Time',
                         font: { size: 20 }
                     },
                     tooltip: {
@@ -159,20 +152,20 @@
                                 return {{ titles | tojson }}[index];
                             },
                             label: function(tooltipItem) {
-                                return `Skill Level: ${tooltipItem.raw}`;
+                                return `Class Skill Level: ${tooltipItem.raw}`;
                             }
                         }
                     }
                 },
                 scales: {
                     x: { 
-                        title: { display: true, text: 'Datum' } 
+                        title: { display: true, text: 'Date' } 
                     },
                     y: { 
                         min: 1, 
                         max: 10, 
                         stepSize: 1, 
-                        title: { display: true, text: 'Skill Level' } 
+                        title: { display: true, text: 'Class Skill Level' } 
                     }
                 }
             }

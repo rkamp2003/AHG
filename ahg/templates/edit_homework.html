@@ -1,45 +1,39 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Hausaufgabe bearbeiten</title>
+    <title>Edit Homework</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="top-buttons" style="display: flex; justify-content: space-between; align-items: center;">
-        <a href="/class_details_teacher/{{ class_id }}/{{ teacher_id }}" class="button">Zurück zur Klasse</a>
+        <a href="/class_details_teacher/{{ class_id }}/{{ teacher_id }}" class="button">Back to Class</a>
     </div>
 
-    <h1>Hausaufgabe bearbeiten: {{ homework['title'] }}</h1>
+    <h1>Edit Homework: {{ homework['title'] }}</h1>
 
-    <!-- Formular für Fragen -->
     <form method="POST">
         <input type="hidden" name="class_id" value="{{ homework['class_id'] }}">
         <input type="hidden" name="teacher_id" value="{{ session['teacher_id'] }}">
 
         {% for question in questions %}
             <fieldset>
-                <legend>Frage {{ loop.index }}</legend>
+                <legend>Question {{ loop.index }}</legend>
                 <input type="hidden" name="question_ids" value="{{ question['id'] }}">
                 
-                <!-- Frage -->
-                <label>Frage:</label>
+                <label>Question:</label>
                 <input type="text" name="questions" value="{{ question['question'] }}" required>
 
-                <!-- Antwortoptionen -->
-                <label>Antwortoptionen (getrennt durch Kommas):</label>
+                <label>Answer Options (separated by commas):</label>
                 <input type="text" name="options" value="{{ ', '.join(json.loads(question['options'])) }}" required>
 
-                <!-- Richtige Antwort -->
-                <label>Richtige Antwort (Index):</label>
+                <label>Correct Answer (Index):</label>
                 <input type="number" name="correct_answers" value="{{ question['correct_answer'] }}" required>
 
-                <!-- Erklärung -->
-                <label>Erklärung:</label>
+                <label>Explanation:</label>
                 <textarea name="explanations" required>{{ question['explanation'] }}</textarea>
 
-                <!-- Fragentyp -->
-                <label>Fragentyp:</label>
+                <label>Question Type:</label>
                 <select name="taxonomies" required>
                     <option value="Remembering" {% if question['taxonomy'] == 'Remembering' %}selected{% endif %}>Remembering</option>
                     <option value="Understanding" {% if question['taxonomy'] == 'Understanding' %}selected{% endif %}>Understanding</option>
@@ -47,8 +41,7 @@
                     <option value="Analyzing" {% if question['taxonomy'] == 'Analyzing' %}selected{% endif %}>Analyzing</option>
                 </select>
 
-                <!-- Schwierigkeitsgrad -->
-                <label>Schwierigkeitsgrad:</label>
+                <label>Difficulty Level:</label>
                 <select name="skill_levels" required>
                     <option value="1" {% if question['skill_level'] == 1 %}selected{% endif %}>1</option>
                     <option value="4" {% if question['skill_level'] == 4 %}selected{% endif %}>4</option>
@@ -57,9 +50,8 @@
             </fieldset>
         {% endfor %}
 
-        <!-- Buttons zum Speichern und Veröffentlichen -->
-        <button type="submit" name="save" class="submit-button">HA als Entwurf speichern</button>
-        <button type="submit" name="publish" class="submit-button">HA speichern und veröffentlichen</button>
+        <button type="submit" name="save" class="submit-button">Save as Draft</button>
+        <button type="submit" name="publish" class="submit-button">Save and Publish</button>
     </form>
 </body>
 </html>

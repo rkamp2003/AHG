@@ -1,36 +1,36 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Schüler-Dashboard</title>
+    <title>Student Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="top-buttons">
-        <a href="/" class="button">Abmelden</a>
+        <a href="/" class="button">Log out</a>
     </div>
 
-    <h1>Willkommen, {{ student['name'] }}</h1>
+    <h1>Welcome, {{ student['name'] }}</h1>
 
-    <h3>Ihre Informationen:</h3>
+    <h3>Your Information:</h3>
     <ul class="info-list">
         <li>Name: {{ student['name'] }}</li>
         <li>Email: {{ student['email'] }}</li>
         <li>Skill Level: {{ student['skill_level'] }}</li>
     </ul>
 
-    <h2>Ihre Kurse:</h2>
+    <h2>Your Courses:</h2>
     <ul class="class-list">
         {% for class in joined_classes %}
             <li>
                 <a href="/class_details_student/{{ class['id'] }}/{{ student['id'] }}">
-                    {{ class['class_name'] }} - Fach: {{ class['subject'] }} - Lehrer: {{ class['teacher_name'] }} - Skill Level (Klasse): {{ class['class_skill_level'] }}
+                    {{ class['class_name'] }} - Subject: {{ class['subject'] }} - Teacher: {{ class['teacher_name'] }} - Skill Level (Class): {{ class['class_skill_level'] }}
                 </a>
             </li>
         {% endfor %}
     </ul>
 
-    <h3>Verlauf des Gesamtskill-Levels</h3>
+    <h3>Overall Skill Level Progress</h3>
     <div class="chart-container" style="max-width: 800px;">
         <canvas id="totalSkillChart"></canvas>
     </div>
@@ -64,25 +64,25 @@
                     legend: { position: 'top' },
                     title: { 
                         display: true, 
-                        text: 'Skill Level Verlauf',
+                        text: 'Skill Level Progress',
                         font: { size: 20 }
                     },
                     tooltip: {
                         callbacks: {
                             title: function(tooltipItems) {
                                 const index = tooltipItems[0].dataIndex;
-                                const homeworkTitle = {{ titles | tojson }}[index]; // Titel der HA
-                                const className = {{ class_names | tojson }}[index]; // Klassenname
-                                return `${homeworkTitle} - ${className}`; // Titel und Klassenname kombinieren
+                                const homeworkTitle = {{ titles | tojson }}[index]; // Homework title
+                                const className = {{ class_names | tojson }}[index]; // Class name
+                                return `${homeworkTitle} - ${className}`; // Combine title and class name
                             },
                             label: function(tooltipItem) {
-                                return `Skill Level: ${tooltipItem.raw}`; // Skill Level-Wert
+                                return `Skill Level: ${tooltipItem.raw}`; // Skill Level value
                             }
                         }
                     }
                 },
                 scales: {
-                    x: { title: { display: true, text: 'Datum' } },
+                    x: { title: { display: true, text: 'Date' } },
                     y: { 
                         min: 1, 
                         max: 10, 
@@ -97,20 +97,20 @@
 
     </script>
 
-    <h3>Einer Klasse beitreten</h3>
+    <h3>Join a Class</h3>
     <form action="/join_class" method="post" onsubmit="return checkSelection()" style="text-align: center;">
         <input type="hidden" name="student_id" value="{{ student['id'] }}">
-        <label for="class_search">Klasse suchen:</label>
+        <label for="class_search">Search Class:</label>
         <div class="autocomplete-container" style="display: inline-flex; align-items: center;">
-            <input type="text" id="class_search" oninput="showSuggestions(this.value)" autocomplete="off" placeholder="Klasse eingeben...">
-            <button type="submit" style="margin-left: 10px;">Beitreten</button>
+            <input type="text" id="class_search" oninput="showSuggestions(this.value)" autocomplete="off" placeholder="Enter class...">
+            <button type="submit" style="margin-left: 10px;">Join</button>
             <ul class="autocomplete-suggestions" id="suggestions-container"></ul>
         </div>
         <input type="hidden" id="class_id" name="class_id" required>
     </form>
 
     <script>
-        // Verwenden Sie |tojson, indem Sie sicherstellen, dass all_classes korrekt in JSON umgewandelt wird
+        // Use |tojson to ensure all_classes is correctly converted to JSON
         const allClasses = {{ all_classes|tojson }};
         const suggestionsContainer = document.getElementById('suggestions-container');
 

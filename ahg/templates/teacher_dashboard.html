@@ -2,41 +2,44 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Lehrer-Dashboard</title>
+    <title>Teacher Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="top-buttons">
-        <a href="/" class="button">Abmelden</a>
+        <a href="/" class="button">Log Out</a>
     </div>
     
-    <h1>Willkommen, {{ teacher['name'] }}</h1>
-    <h2>Ihre Klassen:</h2>
+    <h1>Welcome, {{ teacher['name'] }}</h1>
+    <h2>Your Classes:</h2>
     <ul class="class-list">
         {% for class in classes %}
             <li>
                 <a href="/class_details_teacher/{{ class['id'] }}/{{ teacher['id'] }}">
-                    {{ class['class_name'] }} - Fach: {{ class['subject'] }} - Jahrgangsstufe: {{ class['grade_level'] }}
+                    {{ class['class_name'] }} - Subject: {{ class['subject'] }} - Grade Level: {{ class['grade_level'] }}
                 </a>
             </li>
         {% endfor %}
     </ul>
 
     <div id="teacher-options" style="text-align: center;">
-        <button onclick="showCreateClass()">Klasse erstellen</button>
+        <button onclick="showCreateClass()">Create Class</button>
     </div>
     
     <div id="create-class" style="display:none; text-align: center;">
-        <h3>Neuen Kurs erstellen</h3>
+        <h3>Create New Course</h3>
         <form action="/create_class" method="post">
             <input type="hidden" name="teacher_id" value="{{ teacher['id'] }}">
-            <label for="class_name">Kursname:</label>
-            <input type="text" id="class_name" name="class_name" required><br>
-            <label for="subject">Fach:</label>
-            <input type="text" id="subject" name="subject" required><br>
-            <label for="grade_level">Jahrgangsstufe:</label>
-            <input type="number" id="grade_level" name="grade_level" min="1" max="13" required><br>
-            <button type="submit">Klasse erstellen</button>
+            <label for="class_name">Course Name:</label>
+            <input type="text" id="class_name" name="class_name" required>
+
+            <label for="subject">Subject:</label>
+            <input type="text" id="subject" name="subject" required>
+
+            <label for="grade_level">Grade Level:</label>
+            <input type="number" id="grade_level" name="grade_level" min="1" max="13" required>
+
+            <button type="submit">Create Class</button>
         </form>        
     </div>
 
