@@ -1,7 +1,13 @@
 # AHG
 DSR Project Seminar
 
-Requirements in pyproject-toml -> run poerty install --sync or install manually
+Requirements in pyproject-toml -> install via poetry or install manually
+ ```code
+  poetry install --sync
+  ```
+```code
+  pip install your-package
+  ```
 
 set api key by ether
 - edeting app.py l. 590 to
