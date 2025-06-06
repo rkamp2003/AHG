@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ retry['title'] }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="top-buttons" style="display: flex; justify-content: flex-start;">
+        <a href="/homework/{{ retry['homework_id'] }}/{{ student_id }}" class="button">Back to Homework</a>
+    </div>
+
+    <h1>{{ retry['title'] }}</h1>
+    <p>Created: {{ retry['date_created'][:16].replace('T', ' ') }}</p>
+
+    <form id="retry-form">
+        <ol>
+            {% for question in questions %}
+                <li>
+                    <p>{{ question.question }}</p>
+                    <ul>
+                        {% for option in question.options %}
+                            <li>
+                                <label>
+                                    <input type="radio"
+                                           name="answer_{{ question.index }}"
+                                           value="{{ option.index }}"
+                                           {% if selected_answers[question.index|string] is defined and selected_answers[question.index|string] == option.index %}checked{% endif %}
+                                           {% if selected_answers %}disabled{% endif %}>
+                                    {{ option.option }}
+                                </label>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                    <span id="result_{{ question.index }}"></span>
+                </li>
+            {% endfor %}
+        </ol>
+        <button id="check-button" type="button" onclick="checkRetryAnswers()">Check</button>
+    
+    </form>
+
+    <script>
+        const questions = {{ questions | tojson }};
+        const selectedAnswers = {{ selected_answers | tojson }};
+        const retryId = {{ retry['id'] }};
+        const studentId = {{ student_id }};
+
+
+        function checkRetryAnswers() {
+            const form = document.getElementById('retry-form');
+            const elements = form.elements;
+            const checkedAnswers = {};
+            let correctCount = 0;
+            let incorrectCount = 0;
+
+            for (let el of elements) {
+                if (el.type === "radio" && el.checked) {
+                    const questionIndex = el.name.split('_')[1];
+                    checkedAnswers[questionIndex] = parseInt(el.value, 10);
+                }
+            }
+
+            for (let i = 0; i < questions.length; i++) {
+                const resultSpan = document.getElementById('result_' + i);
+                const userAnswer = checkedAnswers[i];
+                const correctAnswer = questions[i].correct_answer;
+                const correctOption = questions[i].options.find(opt => opt.index === correctAnswer).option;
+                const explanation = questions[i].explanation;
+
+                if (userAnswer === undefined) {
+                    resultSpan.innerText = `❌ No answer selected. Correct: ${correctOption}. Explanation: ${explanation}`;
+                    incorrectCount++;
+                } else if (userAnswer === correctAnswer) {
+                    resultSpan.innerText = `✔️ Correct! ${correctOption}. Explanation: ${explanation}`;
+                    correctCount++;
+                } else {
+                    resultSpan.innerText = `❌ Wrong! Correct: ${correctOption}. Explanation: ${explanation}`;
+                    incorrectCount++;
+                }
+            }
+
+            // Nur submitten, wenn noch keine Antworten gespeichert sind!
+            if (Object.keys(selectedAnswers).length === 0) {
+                fetch('/submit_retry_task', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        retry_id: retryId,
+                        student_id: studentId,
+                        selected_answers: checkedAnswers,
+                        correct_count: correctCount,
+                        incorrect_count: incorrectCount
+                    })
+                }).then(resp => resp.json()).then(data => {
+                    alert('Retry task submitted!');
+                    window.location.reload();
+                });
+            }
+            // Button ausblenden, damit kein mehrfaches Absenden möglich ist
+            document.getElementById('check-button').style.display = 'none';
+
+            // Retry-Button jetzt anzeigen
+            document.getElementById('retry-button').style.display = 'inline-block';
+        }
+
+        // Wenn bereits Antworten vorhanden, alles ausgrauen und Ergebnisse anzeigen
+        window.onload = function() {
+            if (Object.keys(selectedAnswers).length > 0) {
+                for (let i = 0; i < questions.length; i++) {
+                    const resultSpan = document.getElementById('result_' + i);
+                    const userAnswer = selectedAnswers[i];
+                    const correctAnswer = questions[i].correct_answer;
+                    const correctOption = questions[i].options.find(opt => opt.index === correctAnswer).option;
+                    const explanation = questions[i].explanation;
+                    if (userAnswer === undefined) {
+                        resultSpan.innerText = `❌ No answer selected. Correct: ${correctOption}. Explanation: ${explanation}`;
+                    } else if (userAnswer === correctAnswer) {
+                        resultSpan.innerText = `✔️ Correct! ${correctOption}. Explanation: ${explanation}`;
+                    } else {
+                        resultSpan.innerText = `❌ Wrong! Correct: ${correctOption}. Explanation: ${explanation}`;
+                    }
+                }
+                document.getElementById('check-button').style.display = 'none';
+                document.getElementById('retry-button').style.display = 'inline-block';
+            }
+        }
+    </script>
+</body>
+</html>

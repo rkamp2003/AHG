@@ -6,7 +6,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="top-buttons" style="display: flex; justify-content: flex-start;">
+    <div class="top-buttons-fixed">
         <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Back to Class</a>
     </div>
 
@@ -43,12 +43,58 @@
         {% endif %}
     </form>
 
+    <!-- Retry-Button -->
+    <div style="display: flex; justify-content: center; margin-top: 16px;">
+        <button id="retry-button" type="button" class="button" style="display:none;" onclick="openRetryModal()">Retry</button>
+    </div>
+
+    <!-- Retry-Modal -->
+    <div id="retry-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:1000;">
+      <div style="background:#fff; padding:20px; border-radius:8px; max-width:400px; margin:auto;">
+        <h3>Retry Homework</h3>
+        <label>Reason:</label>
+        <select id="retry-reason">
+          <option value="I want more practice">I want more practice</option>
+          <option value="I want new questions">I want new questions</option>
+          <option value="I want to improve my score">I want to improve my score</option>
+          <option value="Other">Other</option>
+        </select>
+        <label>Extra info (optional):</label>
+        <textarea id="retry-extra-info" style="width:100%;"></textarea>
+        <button onclick="submitRetry()">Request Retry</button>
+        <button onclick="closeRetryModal()">Cancel</button>
+        <button type="button" onclick="showPrompt()" style="margin-top:8px;">Show Full Prompt</button>
+        <pre id="full-prompt" style="display:none; background:#eee; padding:10px; margin-top:10px; max-width:100%; max-height:300px; overflow-x:auto; overflow-y:auto;"></pre>
+      </div>
+    </div>
+
+    <!-- Retry-Tasks-Liste oben rechts -->
+    <div class="retry-tasks-fixed">
+        <h4 style="margin-top:0;">Your Retry Tasks</h4>
+        {% if retry_tasks %}
+            <ul style="padding-left:18px;">
+            {% for retry in retry_tasks %}
+                <li>
+                    <a href="{{ url_for('retry_homework_view', retry_id=retry['id'], student_id=student_id) }}">
+                        {{ retry['title'] }}<br>
+                        <span style="font-size:0.9em; color:#888;">{{ retry['date_created'] }}</span>
+                    </a>
+                </li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <span>No retry tasks yet.</span>
+        {% endif %}
+    </div>
+
     <script>
         const correctAnswers = {{ correct_answers | tojson }};
         const explanations = {{ explanations | tojson }};
         const questions = {{ questions | tojson }};
         const selectedAnswers = {{ selected_answers | tojson }};
-        const homeworkStatus = "{{ homework_status }}";
+        const homeworkStatus = "{{ homework_status|trim }}";
+
+        console.log("homeworkStatus:", homeworkStatus);
 
         function checkAnswers() {
             const form = document.getElementById('homework-form');
@@ -89,15 +135,117 @@
             }
 
             window.homeworkResults = { correctCount, incorrectCount };
+            document.getElementById('retry-button').style.display = 'inline-block';
         }
 
         // Automatisch auswerten, wenn bereits erledigt
         if (homeworkStatus === "Done") {
-            window.addEventListener('DOMContentLoaded', () => {
-                // Radiobuttons sind schon vorausgewählt, jetzt auswerten
+            window.onload = function() {
                 checkAnswers();
+                // Check-Button ausblenden, Retry-Button einblenden
+                document.getElementById('check-button').style.display = 'none';
+                document.getElementById('retry-button').style.display = 'inline-block';
+            };
+        }
+
+        function openRetryModal() {
+            document.getElementById('retry-modal').style.display = 'flex';
+        }
+
+        function closeRetryModal() {
+            document.getElementById('retry-modal').style.display = 'none';
+        }
+
+        function submitRetry() {
+            const reason = document.getElementById('retry-reason').value;
+            const extra_info = document.getElementById('retry-extra-info').value;
+
+            // Finde falsch beantwortete Fragen
+            const wrongQuestions = [];
+            for (let i = 0; i < questions.length; i++) {
+                const radios = document.getElementsByName('answer_' + i);
+                let selected = null;
+                for (let r of radios) if (r.checked) selected = parseInt(r.value);
+                if (selected === undefined || selected !== correctAnswers[i]) {
+                    wrongQuestions.push(questions[i]);
+                }
+            }
+            fetch('/retry_homework', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    homework_id: {{ homework['id'] }},
+                    student_id: {{ student_id }},
+                    reason: reason,
+                    extra_info: extra_info,
+                    wrong_questions: wrongQuestions,
+                    class_skill_level: {{ class_skill_level if class_skill_level is not none else 'null' }}
+                })
+            }).then(resp => resp.json()).then(data => {
+                if (data.retry_id) {
+                    window.location.href = `/retry_homework_view/${data.retry_id}/${student_id}`;
+                } else {
+                    alert('Retry homework generated!');
+                    closeRetryModal();
+                    window.location.reload();
+                }
             });
         }
+
+        function showPrompt() {
+            const reason = document.getElementById('retry-reason').value;
+            const extra_info = document.getElementById('retry-extra-info').value;
+            let wrongQuestions = [];
+            for (let i = 0; i < questions.length; i++) {
+                const radios = document.getElementsByName('answer_' + i);
+                let selected = null;
+                for (let r of radios) if (r.checked) selected = parseInt(r.value);
+                if (selected === undefined || selected !== parseInt(correctAnswers[i])) {
+                    wrongQuestions.push({
+                        question: questions[i].question,
+                        options: questions[i].options.map(opt => opt.option),
+                        answer: parseInt(correctAnswers[i]),
+                        selected: selected
+                    });
+                }
+            }
+            const prompt = `
+You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students. 
+The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
+The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
+
+Your task:
+Please create **10 new multiple-choice questions** (4 options per question, answer as index (0-based)) that:
+- Cover similar topics or concepts as the incorrectly answered questions.
+- Match the student's current class skill level (1-10 scale, 10 = most advanced).
+- Help the student improve by addressing the specific gaps identified through their incorrect responses.
+- Are **not identical** to the original questions but target the same learning objectives.
+
+Homework description: {{ homework['description']|e }}
+Student class skill level: {{ class_skill_level }}
+Reason for retry: ${reason}
+Student's additional info: ${extra_info}
+questions the student got wrong:
+${JSON.stringify(wrongQuestions, null, 2)}
+Please answer only with JSON in this format:
+[
+    {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}
+]
+    `;
+    document.getElementById('full-prompt').innerText = prompt;
+    document.getElementById('full-prompt').style.display = 'block';
+}
+
+
+document.addEventListener('mousedown', function(event) {
+    const modal = document.getElementById('retry-modal');
+    if (modal.style.display === 'flex') {
+        const modalContent = modal.firstElementChild;
+        if (event.target === modal) {
+            closeRetryModal();
+        }
+    }
+});
     </script>
 </body>
 </html>

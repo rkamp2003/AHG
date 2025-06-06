@@ -749,6 +749,9 @@ def view_homework_student(homework_id, student_id):
     ).fetchone()
     student_skill_level = student['class_skill_level'] if student else 0
 
+    # Nach dem Abrufen von student_skill_level
+    class_skill_level = student_skill_level if student_skill_level else None
+
     # Skill-Level-Bereich definieren
     if student_skill_level <= 3:
         skill_level = 1
@@ -784,6 +787,24 @@ def view_homework_student(homework_id, student_id):
         correct_answers[idx] = question['correct_answer']
         explanations[idx] = question['explanation']
 
+    # Retry-Homeworks abrufen
+    retry_tasks = conn.execute(
+        '''SELECT id, generated_questions, date_created, retry_count, 
+                  json_extract(generated_questions, '$[0].question') as title
+           FROM HomeworkRetries
+           WHERE homework_id = ? AND student_id = ?
+           ORDER BY date_created DESC''',
+        (homework_id, student_id)
+    ).fetchall()
+
+    retry_list = []
+    for retry in retry_tasks:
+        retry_list.append({
+            'id': retry['id'],
+            'title': f"Retry {retry['retry_count']} - {retry['date_created'][:16].replace('T', ' ')}",
+            'date_created': retry['date_created'][:16].replace('T', ' '),
+        })
+
     conn.close()
 
     return render_template(
@@ -795,6 +816,40 @@ def view_homework_student(homework_id, student_id):
         correct_answers=correct_answers,
         explanations=explanations,
         homework_status=homework_status['status'],
+        selected_answers=selected_answers,
+        class_skill_level=class_skill_level,
+        retry_tasks=retry_list
+    )
+
+@app.route('/retry_homework_view/<int:retry_id>/<int:student_id>')
+def retry_homework_view(retry_id, student_id):
+    conn = get_db_connection()
+    retry = conn.execute('SELECT * FROM HomeworkRetries WHERE id = ?', (retry_id,)).fetchone()
+    if not retry:
+        conn.close()
+        return "Retry homework not found", 404
+
+    question_data = conn.execute(
+        'SELECT * FROM HomeworkRetryQuestions WHERE retry_id = ?', (retry_id,)
+    ).fetchall()
+    questions = []
+    for idx, row in enumerate(question_data):
+        question = dict(row)
+        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
+        questions.append({'index': idx, **question})
+
+    result = conn.execute(
+        'SELECT selected_answers FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
+        (retry_id, student_id)
+    ).fetchone()
+    selected_answers = json.loads(result['selected_answers']) if result and result['selected_answers'] else {}
+
+    conn.close()
+    return render_template(
+        'view_retry_homework.html',
+        retry=retry,
+        questions=questions,
+        student_id=student_id,
         selected_answers=selected_answers
     )
 
@@ -1048,6 +1103,8 @@ def toggle_homework_status(homework_id):
 
 @app.route('/retry_homework', methods=['POST'])
 def retry_homework():
+    import json
+    from datetime import datetime
 
     api_key = os.getenv("CHATGPT_API_KEY")
     data = request.get_json()
@@ -1064,22 +1121,44 @@ def retry_homework():
     homework = conn.execute('SELECT description FROM Homework WHERE id = ?', (homework_id,)).fetchone()
     description = homework['description']
 
-    # Build prompt
-    prompt = f"""
-    The student wants to retry the following homework. 
-    Homework description: {description}
-    Student class skill level: {class_skill_level}
-    For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
-    Reason for retry: {reason}
-    Student's additional info: {extra_info}
-    Please create 10 new multiple-choice questions (4 options each, answer as index (0-based), with explanation) based on the description and the following questions the student got wrong:
-    {json.dumps(wrong_questions, ensure_ascii=False)}
-    Please answer only with JSON in this format:
-    [
-        {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}}
-    ]
-    """
+    # ...vor dem Prompt...
+    filtered_wrong_questions = []
+    for q in wrong_questions:
+        filtered_wrong_questions.append({
+            "question": q.get("question"),
+            "options": [opt["option"] if isinstance(opt, dict) else opt for opt in q.get("options", [])],
+            "answer": q.get("answer"),
+            "selected": q.get("selected")
+        })
 
+
+    prompt = f"""
+You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students. 
+The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
+The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
+
+Your task:
+Please create **10 new multiple-choice questions** (4 options per question, answer as index (0-based)) that:
+- Cover similar topics or concepts as the incorrectly answered questions.
+- Match the student's current class skill level (1-10 scale, 10 = most advanced).
+- Help the student improve by addressing the specific gaps identified through their incorrect responses.
+- Are **not identical** to the original questions but target the same learning objectives.
+
+Homework description: {description}
+Student class skill level: {class_skill_level}
+Reason for retry: {reason}
+Student's additional info: {extra_info}
+questions the student got wrong:
+{json.dumps(filtered_wrong_questions, ensure_ascii=False, indent=2)}
+Please answer only with JSON in this format:
+[
+    {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}}
+]
+"""
+
+    print("=== Prompt an ChatGPT ===")
+    print(prompt)
+    print("========================")
     # OpenAI API call
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -1111,16 +1190,68 @@ def retry_homework():
         (homework_id, student_id)
     ).fetchone()[0] + 1
 
-    # Save retry
-    conn.execute(
+    # Save retry meta
+    cursor = conn.execute(
         '''INSERT INTO HomeworkRetries 
            (homework_id, student_id, retry_count, reason, extra_info, generated_questions, date_created)
            VALUES (?, ?, ?, ?, ?, ?, ?)''',
         (homework_id, student_id, retry_count, reason, extra_info, json.dumps(questions), datetime.now().isoformat())
     )
+    retry_id = cursor.lastrowid
+
+    # Save each question in HomeworkRetryQuestions
+    for q in questions:
+        options = json.dumps(q['options'])
+        conn.execute(
+            '''INSERT INTO HomeworkRetryQuestions
+               (retry_id, skill_level, question, correct_answer, explanation, question_type, options)
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (
+                retry_id,
+                class_skill_level,
+                q['question'],
+                q['answer'],
+                q.get('explanation', ''),
+                'multiple_choice',
+                options
+            )
+        )
+
     conn.commit()
     conn.close()
-    return {"message": "Retry homework generated", "questions": questions}, 200
+    return {"message": "Retry homework generated"}, 200
+
+@app.route('/submit_retry_task', methods=['POST'])
+def submit_retry_task():
+    from datetime import datetime
+    conn = get_db_connection()
+    data = request.get_json()
+    retry_id = data.get('retry_id')
+    student_id = data.get('student_id')
+    correct_count = int(data.get('correct_count'))
+    incorrect_count = int(data.get('incorrect_count'))
+    selected_answers = data.get('selected_answers', {})
+
+    # Prüfe, ob schon ein Ergebnis existiert
+    existing = conn.execute(
+        'SELECT id FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
+        (retry_id, student_id)
+    ).fetchone()
+
+    if existing:
+        conn.close()
+        return {"message": "Already submitted"}, 200
+
+    date_submitted = datetime.now().isoformat()
+    conn.execute(
+        '''INSERT INTO HomeworkRetryResults
+           (retry_id, student_id, selected_answers, correct_count, incorrect_count, date_submitted)
+           VALUES (?, ?, ?, ?, ?, ?)''',
+        (retry_id, student_id, json.dumps(selected_answers), correct_count, incorrect_count, date_submitted)
+    )
+    conn.commit()
+    conn.close()
+    return {"message": "Retry submitted"}, 200
 
 
 

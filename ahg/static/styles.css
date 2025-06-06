@@ -41,6 +41,15 @@ h1, h2, h3 {
     gap: 10px;
 }
 
+.top-buttons-fixed {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 2000;
+    background: none;
+    box-shadow: none;
+}
+
 ul.class-list, ul.student-list {
     list-style-type: none;
     padding: 0;
@@ -281,4 +290,16 @@ textarea#description {
     width: 74%; 
     height: 200px; 
     resize: none; 
+}
+
+.retry-tasks-fixed {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px #ccc;
+    padding: 16px;
+    min-width: 220px;
+    z-index: 2000;
 }
