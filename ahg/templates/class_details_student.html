@@ -22,21 +22,51 @@
         <li>Skill Level (Class): {{ student['class_skill_level'] }}</li>
     </ul>
 
-    <h3>Homework</h3>
-    <ul class="class-list">
-        {% for homework in homework_list %}
-            <li>
-                <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
-                    {{ homework['title'] }} - assigned on: {{ homework['date_created'] }} - ({{ homework['status'] }})
-                </a>
-                {% if homework['status'] == "Done" %}
-                    <span class="completed">✔️</span>
-                {% else %}
-                    <span class="pending">❌</span>
-                {% endif %}
-            </li>
-        {% endfor %}
-    </ul>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; max-width: 900px; margin: 0 auto 20px auto;">
+        <!-- Homework List (left) -->
+        <div style="flex: 2;">
+            <h3>Homework</h3>
+            <ul class="class-list">
+                {% for homework in homework_list %}
+                    <li>
+                        <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
+                            {{ homework['title'] }} - assigned on: {{ homework['date_created'] }} - ({{ homework['status'] }})
+                        </a>
+                        {% if homework['status'] == "Done" %}
+                            <span class="completed">✔️</span>
+                        {% else %}
+                            <span class="pending">❌</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+        <!-- Progress Bar (right) -->
+        <div style="flex: 1; margin-left: 40px;">
+            <h3 style="text-align:center;">Homework Completion</h3>
+            <div style="display: flex; background: #eee; border-radius: 8px; overflow: hidden; height: 28px; box-shadow: 0 1px 2px #ccc; margin-bottom: 10px;">
+                {% for i in range(total_homework) %}
+                    <div style="
+                        flex: 1;
+                        background: {% if i < completed_homework %}linear-gradient(90deg, #4fc3f7, #1976d2){% else %}#d3d3d3{% endif %};
+                        height: 100%;
+                        border-right: {% if not loop.last %}1px solid #fff{% else %}none{% endif %};
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: #fff;
+                        font-weight: bold;
+                        font-size: 1em;
+                        ">
+                        {% if total_homework <= 10 %}{{ i+1 }}{% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+            <div style="text-align:center; color:#4a4a8e; font-weight:bold;">
+                {{ completed_homework }} of {{ total_homework }} done
+            </div>
+        </div>
+    </div>
 
     <h3>Progress Over Time</h3>
     <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">

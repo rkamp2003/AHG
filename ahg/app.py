@@ -502,7 +502,12 @@ def class_details_student(class_id, student_id):
         ''', (student_id, class_id)
     ).fetchall()
 
- # Daten für Graphen vorbereiten – nur bearbeitete Hausaufgaben
+    # Progress calculation
+    total_homework = len(homework_list)
+    completed_homework = sum(1 for hw in homework_list if hw['status'] == 'Done')
+    progress_percent = int((completed_homework / total_homework) * 100) if total_homework > 0 else 0
+
+    # Daten für Graphen vorbereiten – nur bearbeitete Hausaufgaben
     homework_results = conn.execute(
         '''
         SELECT 
@@ -545,7 +550,10 @@ def class_details_student(class_id, student_id):
         dates=dates,
         titles=titles,
         correct_counts=correct_counts,
-        skill_levels=skill_levels
+        skill_levels=skill_levels,
+        progress_percent=progress_percent,
+        completed_homework=completed_homework, 
+        total_homework=total_homework
     )
 
 
@@ -579,7 +587,7 @@ def leave_class():
     return redirect(url_for('student_dashboard'))
 
 
-### Hausaufgabenerstellung ###
+### Aufgabenerstellung ###
 
 
 @app.route('/create_homework', methods=['POST'])
@@ -719,13 +727,21 @@ def view_homework_student(homework_id, student_id):
         SELECT CASE 
                    WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Done'
                    ELSE 'Open'
-               END AS status
+               END AS status,
+               HomeworkResults.selected_answers
         FROM Homework
         LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id
         AND HomeworkResults.student_id = ?
         WHERE Homework.id = ?
         ''', (student_id, homework_id)
     ).fetchone()
+
+    selected_answers = {}
+    if homework_status and homework_status['selected_answers']:
+        try:
+            selected_answers = json.loads(homework_status['selected_answers'])
+        except Exception:
+            selected_answers = {}
 
     # Abrufen des Skill-Levels des Schülers
     student = conn.execute(
@@ -778,7 +794,8 @@ def view_homework_student(homework_id, student_id):
         student_id=student_id,
         correct_answers=correct_answers,
         explanations=explanations,
-        homework_status=homework_status['status']  # Den Status zur Vorlage übergeben
+        homework_status=homework_status['status'],
+        selected_answers=selected_answers
     )
 
 
@@ -856,6 +873,7 @@ def submit_homework():
     student_id = data.get('student_id')
     correct_count = int(data.get('correct_count'))
     incorrect_count = int(data.get('incorrect_count'))
+    selected_answers = data.get('selected_answers', {})  # <-- get selected answers
 
     # Datum der Abgabe erfassen
     date_submitted = datetime.now().date()
@@ -910,16 +928,16 @@ def submit_homework():
             (avg_class_skill, student_id)
         )
 
-        # Ergebnis speichern mit neuen Skill-Levels
+        # Ergebnis speichern mit neuen Skill-Levels und selected_answers
         conn.execute(
             '''
             INSERT INTO HomeworkResults (homework_id, student_id, correct_count, 
                                          incorrect_count, date_submitted, 
-                                         new_class_skill_level, new_skill_level)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                         new_class_skill_level, new_skill_level, selected_answers)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (homework_id, student_id, correct_count, incorrect_count, date_submitted,
-             class_skill_level, avg_class_skill)
+             class_skill_level, avg_class_skill, json.dumps(selected_answers))  # <-- save as JSON
         )
 
         conn.commit()
@@ -1027,6 +1045,82 @@ def toggle_homework_status(homework_id):
     conn.close()
 
     return redirect(url_for('edit_homework', homework_id=homework_id))
+
+@app.route('/retry_homework', methods=['POST'])
+def retry_homework():
+
+    api_key = os.getenv("CHATGPT_API_KEY")
+    data = request.get_json()
+    homework_id = data.get('homework_id')
+    student_id = data.get('student_id')
+    reason = data.get('reason')
+    extra_info = data.get('extra_info', '')
+    wrong_questions = data.get('wrong_questions', [])
+    class_skill_level = data.get('class_skill_level', 1)
+
+    conn = get_db_connection()
+
+    # Get homework description
+    homework = conn.execute('SELECT description FROM Homework WHERE id = ?', (homework_id,)).fetchone()
+    description = homework['description']
+
+    # Build prompt
+    prompt = f"""
+    The student wants to retry the following homework. 
+    Homework description: {description}
+    Student class skill level: {class_skill_level}
+    For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
+    Reason for retry: {reason}
+    Student's additional info: {extra_info}
+    Please create 10 new multiple-choice questions (4 options each, answer as index (0-based), with explanation) based on the description and the following questions the student got wrong:
+    {json.dumps(wrong_questions, ensure_ascii=False)}
+    Please answer only with JSON in this format:
+    [
+        {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}}
+    ]
+    """
+
+    # OpenAI API call
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data_api = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+    response = requests.post(url, headers=headers, json=data_api)
+    if response.status_code == 200:
+        result = response.json()
+        generated_content = result["choices"][0]["message"]["content"]
+        try:
+            json_start = generated_content.index('[')
+            json_end = generated_content.rindex(']')
+            json_content = generated_content[json_start:json_end + 1]
+            questions = json.loads(json_content)
+        except Exception as e:
+            return f"Error parsing JSON: {str(e)}", 500
+    else:
+        return f"OpenAI error: {response.text}", 500
+
+    # Count previous retries
+    retry_count = conn.execute(
+        'SELECT COUNT(*) FROM HomeworkRetries WHERE homework_id = ? AND student_id = ?',
+        (homework_id, student_id)
+    ).fetchone()[0] + 1
+
+    # Save retry
+    conn.execute(
+        '''INSERT INTO HomeworkRetries 
+           (homework_id, student_id, retry_count, reason, extra_info, generated_questions, date_created)
+           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+        (homework_id, student_id, retry_count, reason, extra_info, json.dumps(questions), datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+    return {"message": "Retry homework generated", "questions": questions}, 200
 
 
 

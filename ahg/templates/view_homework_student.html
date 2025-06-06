@@ -24,7 +24,9 @@
                         {% for option in question['options'] %}
                             <li>
                                 <label>
-                                    <input type="radio" name="answer_{{ question.index }}" value="{{ option.index }}">
+                                    <input type="radio" name="answer_{{ question.index }}" value="{{ option.index }}"
+                                        {% if selected_answers[question.index|string] is defined and selected_answers[question.index|string] == option.index %}checked{% endif %}
+                                        {% if homework_status == "Done" %}disabled{% endif %}>
                                     {{ option.option }}
                                 </label>
                             </li>
@@ -45,26 +47,28 @@
         const correctAnswers = {{ correct_answers | tojson }};
         const explanations = {{ explanations | tojson }};
         const questions = {{ questions | tojson }};
-        
+        const selectedAnswers = {{ selected_answers | tojson }};
+        const homeworkStatus = "{{ homework_status }}";
+
         function checkAnswers() {
             const form = document.getElementById('homework-form');
             const elements = form.elements;
             const checkedAnswers = {};
             let correctCount = 0;
             let incorrectCount = 0;
-        
+
             for (let el of elements) {
                 if (el.type === "radio" && el.checked) {
                     const questionIndex = el.name.split('_')[1];
                     checkedAnswers[questionIndex] = parseInt(el.value, 10);
                 }
             }
-        
+
             for (let questionIndex in correctAnswers) {
                 const resultSpan = document.getElementById('result_' + questionIndex);
                 const userAnswer = checkedAnswers[questionIndex];
                 const correctAnswer = parseInt(correctAnswers[questionIndex], 10);
-        
+
                 if (userAnswer === undefined) {
                     const correctText = questions[questionIndex].options[correctAnswer].option;
                     resultSpan.innerText = `❌ Wrong! No answer selected. Correct answer: ${correctText}. Explanation: ${explanations[questionIndex]}`;
@@ -78,47 +82,20 @@
                     incorrectCount++;
                 }
             }
-        
+
             if ("{{ homework_status }}" == "Open") {
                 document.getElementById('check-button').style.display = 'none';
                 document.getElementById('submit-button').style.display = 'inline-block';
             }
-        
+
             window.homeworkResults = { correctCount, incorrectCount };
         }
-        
-        function submitHomework() {
-            const results = window.homeworkResults;
-        
-            fetch('/submit_homework', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    homework_id: {{ homework['id'] }},
-                    student_id: {{ student_id }},
-                    correct_count: results.correctCount,
-                    incorrect_count: results.incorrectCount
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.message) {
-                    const message = `
-                        ${data.message}
-                        Correct Answers: ${results.correctCount}
-                        New Class Skill Level: ${data.class_skill_level}
-                        New Overall Skill Level: ${data.overall_skill_level}
-                    `;
-                    alert(message);
-                    window.location.href = `/class_details_student/{{ class_info['id'] }}/{{ student_id }}`;
-                } else {
-                    alert('Error submitting homework.');
-                }
-            })
-            .catch(error => {
-                alert(`Error submitting homework: ${error}`);
+
+        // Automatisch auswerten, wenn bereits erledigt
+        if (homeworkStatus === "Done") {
+            window.addEventListener('DOMContentLoaded', () => {
+                // Radiobuttons sind schon vorausgewählt, jetzt auswerten
+                checkAnswers();
             });
         }
     </script>
