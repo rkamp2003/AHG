@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import sqlite3
 import json
 from datetime import datetime
@@ -6,6 +6,7 @@ from openai  import OpenAI# ChatGPT API
 import os
 import openai
 import requests
+from werkzeug.datastructures import MultiDict
 
 
 app = Flask(__name__)
@@ -131,12 +132,24 @@ def class_details_teacher(class_id, teacher_id):
     # Hausaufgaben abrufen
     # Abrufen der Homework-Listen für die spezifische Klasse
     homework_list = conn.execute(
-        '''
-        SELECT id, title, date_created, status
-        FROM Homework
-        WHERE class_id = ?
-        ''', (class_id,)
-    ).fetchall()
+    '''
+    SELECT Homework.id, Homework.title, Homework.date_created,
+        CASE 
+            WHEN EXISTS (
+                SELECT 1 FROM HomeworkResults
+                WHERE HomeworkResults.homework_id = Homework.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM HomeworkOpenQuestionsResults
+                WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+            )
+            THEN 'Done'
+            ELSE 'Open'
+        END AS status
+    FROM Homework
+    WHERE Homework.class_id = ?  AND Homework.status = 'published'
+    ''', (class_id,)
+).fetchall()
 
     # Durchschnittswerte für Graphen berechnen
     dates = []
@@ -492,14 +505,20 @@ def class_details_student(class_id, student_id):
         '''
         SELECT Homework.id, Homework.title, Homework.date_created,
             CASE 
-                WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Done'
+                WHEN HomeworkResults.date_submitted IS NOT NULL
+                    OR EXISTS (
+                        SELECT 1 FROM HomeworkOpenQuestionsResults
+                        WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+                        AND HomeworkOpenQuestionsResults.student_id = ?
+                    )
+                THEN 'Done'
                 ELSE 'Open'
             END AS status
         FROM Homework
         LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id
-        AND HomeworkResults.student_id = ?
+            AND HomeworkResults.student_id = ?
         WHERE Homework.class_id = ?  AND Homework.status = 'published'
-        ''', (student_id, class_id)
+        ''', (student_id, student_id, class_id)
     ).fetchall()
 
     # Progress calculation
@@ -616,7 +635,7 @@ def create_homework():
 
     Homework description: {description}
 
-    Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering Understanding Applying Analysing Evaluating Creating.
+    Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
     1st level of difficulty (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analysing
     2nd level of difficulty (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analysing
     3rd level of difficulty (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analysing
@@ -638,6 +657,10 @@ def create_homework():
         ]}}
     ]
     """
+
+    print("=== Prompt an ChatGPT ===")
+    print(prompt)
+    print("========================")
 
     # OpenAI API-Endpunkt und Header
     url = "https://api.openai.com/v1/chat/completions"
@@ -703,6 +726,143 @@ def create_homework():
     return redirect(url_for('edit_homework', homework_id=homework_id, class_id=class_id, teacher_id=teacher_id))
 
 
+@app.route('/create_learning_content', methods=['POST'])
+def create_learning_content():
+    data = request.get_json()
+    content_type = data.get('type')
+
+    if content_type == 'mc':
+        title = data.get('title')
+        description = data.get('desc')
+        class_id = data.get('class_id')
+        teacher_id = data.get('teacher_id')
+
+        # Simuliere ein POST-Formular für create_homework
+        form_data = MultiDict([
+            ('class_id', class_id),
+            ('description', description),
+            ('title', title),
+            ('teacher_id', teacher_id)
+        ])
+        old_form = request.form
+        request.form = form_data
+        try:
+            result = create_homework()
+        finally:
+            request.form = old_form
+
+        # Wenn create_homework ein Redirect ist, extrahiere die Ziel-URL
+        if hasattr(result, 'location'):
+            return jsonify({"redirect_url": result.location})
+        return jsonify({"message": "Multiple Choice content created."})
+
+    elif content_type == 'open':
+        title = data.get('title')
+        description = data.get('desc')
+        class_id = data.get('class_id')
+        teacher_id = data.get('teacher_id')
+
+        conn = get_db_connection()
+        class_info = conn.execute(
+            'SELECT subject, grade_level FROM Classes WHERE id = ?',
+            (class_id,)
+        ).fetchone()
+
+        # Prompt für Open Questions nach Bloom
+        prompt = f"""
+Create open-ended homework for the subject {class_info['subject']} in the grade {class_info['grade_level']}:
+For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
+
+Homework description: {description}
+
+Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+For each of the following skill levels, generate 6 open-ended questions (one for each taxonomy type):
+- skill_level 1 (easy): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+- skill_level 4 (medium): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+- skill_level 8 (hard): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+
+For each question, also generate a sample solution (model answer) that would be considered a very good answer for a student.
+Please answer only with JSON content in the following format:
+[
+    {{"skill_level": 1, "questions": [
+        {{"question": "...", "sample_solution": "...", "taxonomy": "Remembering"}},
+        ... (total 6 questions, one per taxonomy)
+    ]}},
+    {{"skill_level": 4, "questions": [
+        ... (6 questions)
+    ]}},
+    {{"skill_level": 8, "questions": [
+        ... (6 questions)
+    ]}}
+]
+"""
+        print("=== Prompt an ChatGPT ===")
+        print(prompt)
+        print("========================")
+        # OpenAI API-Aufruf (wie bei MC)
+        api_key = os.getenv("CHATGPT_API_KEY")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        data_api = {
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
+
+        conn = get_db_connection()
+        try:
+            response = requests.post(url, headers=headers, json=data_api)
+            if response.status_code == 200:
+                result = response.json()
+                generated_content = result["choices"][0]["message"]["content"]
+                try:
+                    json_start = generated_content.index('[')
+                    json_end = generated_content.rindex(']')
+                    json_content = generated_content[json_start:json_end + 1]
+                    open_questions = json.loads(json_content)
+                except (ValueError, json.JSONDecodeError) as e:
+                    conn.close()
+                    return {"message": f"Fehler beim Parsen der JSON-Antwort: {str(e)}"}, 500
+            else:
+                conn.close()
+                return {"message": f"Fehler: {response.status_code} - {response.text}"}, 500
+
+            # Speichere die Aufgabe in Homework
+            cursor = conn.execute(
+                'INSERT INTO Homework (class_id, description, title, date_created, status) VALUES (?, ?, ?, ?, ?)',
+                (class_id, description, title, datetime.now().date(), 'draft')
+            )
+            homework_id = cursor.lastrowid
+
+            # Speichere die Open Questions
+            for question_set in open_questions:
+                skill_level = question_set.get("skill_level")
+                for q in question_set.get("questions", []):
+                    conn.execute(
+                        '''INSERT INTO HomeworkOpenQuestions
+                           (homework_id, skill_level, question, sample_solution, taxonomy)
+                           VALUES (?, ?, ?, ?, ?)''',
+                        (homework_id, skill_level, q["question"], q["sample_solution"], q["taxonomy"])
+                    )
+
+            conn.commit()
+            conn.close()
+            # Gib die Edit-URL zurück (wie bei MC)
+            edit_url = url_for('edit_homework', homework_id=homework_id, class_id=class_id, teacher_id=teacher_id)
+            return jsonify({"redirect_url": edit_url})
+
+        except Exception as e:
+            conn.close()
+            return {"message": f"Ein Fehler ist aufgetreten: {str(e)}"}, 500
+            
+    elif content_type == 'essay':
+        return {"message": "Essay task created."}
+    else:
+        return {"message": "Unknown content type."}, 400
+
 @app.route('/homework/<int:homework_id>/<int:student_id>')
 def view_homework_student(homework_id, student_id):
     import json
@@ -766,6 +926,12 @@ def view_homework_student(homework_id, student_id):
         (homework_id,)
     ).fetchone()
 
+    # Open Questions für das Skill Level laden
+    open_questions = conn.execute(
+        'SELECT id, question, sample_solution, taxonomy, skill_level FROM HomeworkOpenQuestions WHERE homework_id = ? AND skill_level = ?',
+        (homework_id, skill_level)
+    ).fetchall()
+
     if not homework:
         conn.close()
         return "Fehler: Diese Hausaufgabe existiert nicht.", 404
@@ -805,8 +971,29 @@ def view_homework_student(homework_id, student_id):
             'date_created': retry['date_created'][:16].replace('T', ' '),
         })
 
+    # Lade Open-Question-Feedback, falls vorhanden
+    oq_result = conn.execute(
+        'SELECT feedback_json, correct_count, wrong_count, summary FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND student_id = ?',
+        (homework_id, student_id)
+    ).fetchone()
+    openq_feedback = None
+    if oq_result:
+        openq_feedback = {
+            "feedback": json.loads(oq_result["feedback_json"]),
+            "correct_count": oq_result["correct_count"],
+            "wrong_count": oq_result["wrong_count"],
+            "summary": oq_result["summary"]
+        }
+    else:
+        openq_feedback = None
+    openq_answers = {}
+    openq_answers_rows = conn.execute(
+        'SELECT open_question_id, answer FROM HomeworkOpenAnswers WHERE homework_id = ? AND student_id = ?',
+        (homework_id, student_id)
+    ).fetchall()
+    for row in openq_answers_rows:
+        openq_answers[str(row['open_question_id'])] = row['answer']
     conn.close()
-
     return render_template(
         'view_homework_student.html',
         homework=homework,
@@ -818,7 +1005,10 @@ def view_homework_student(homework_id, student_id):
         homework_status=homework_status['status'],
         selected_answers=selected_answers,
         class_skill_level=class_skill_level,
-        retry_tasks=retry_list
+        open_questions=open_questions,
+        retry_tasks=retry_list,
+        openq_answers=openq_answers,
+        openq_feedback=openq_feedback
     )
 
 @app.route('/retry_homework_view/<int:retry_id>/<int:student_id>')
@@ -829,29 +1019,72 @@ def retry_homework_view(retry_id, student_id):
         conn.close()
         return "Retry homework not found", 404
 
-    question_data = conn.execute(
-        'SELECT * FROM HomeworkRetryQuestions WHERE retry_id = ?', (retry_id,)
-    ).fetchall()
-    questions = []
-    for idx, row in enumerate(question_data):
-        question = dict(row)
-        question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
-        questions.append({'index': idx, **question})
+    retry_type = retry['retry_type'] if 'retry_type' in retry.keys() else 'mc'
 
-    result = conn.execute(
-        'SELECT selected_answers FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
-        (retry_id, student_id)
-    ).fetchone()
-    selected_answers = json.loads(result['selected_answers']) if result and result['selected_answers'] else {}
+    if retry_type == 'open':
+        # Open-Question-Retry
+        question_data = conn.execute(
+            'SELECT * FROM HomeworkRetryOpenQuestions WHERE retry_id = ?', (retry_id,)
+        ).fetchall()
+        questions = [dict(row) for row in question_data]
 
-    conn.close()
-    return render_template(
-        'view_retry_homework.html',
-        retry=retry,
-        questions=questions,
-        student_id=student_id,
-        selected_answers=selected_answers
-    )
+        # Lade bereits gespeicherte Antworten
+        answers_rows = conn.execute(
+            'SELECT open_question_id, answer FROM HomeworkRetryOpenAnswers WHERE retry_id = ? AND student_id = ?',
+            (retry_id, student_id)
+        ).fetchall()
+        openq_answers = {str(row['open_question_id']): row['answer'] for row in answers_rows}
+
+        # Lade Feedback, falls vorhanden
+        oq_result = conn.execute(
+            'SELECT feedback_json, correct_count, wrong_count, summary FROM HomeworkRetryOpenResults WHERE retry_id = ? AND student_id = ?',
+            (retry_id, student_id)
+        ).fetchone()
+        openq_feedback = None
+        if oq_result:
+            openq_feedback = {
+                "feedback": json.loads(oq_result["feedback_json"]),
+                "correct_count": oq_result["correct_count"],
+                "wrong_count": oq_result["wrong_count"],
+                "summary": oq_result["summary"]
+            }
+
+        conn.close()
+        return render_template(
+            'view_retry_open_homework.html',
+            retry=retry,
+            questions=questions,
+            student_id=student_id,
+            openq_answers=openq_answers,
+            openq_feedback=openq_feedback
+        )
+    elif retry_type == 'mc':
+        question_data = conn.execute(
+            'SELECT * FROM HomeworkRetryQuestions WHERE retry_id = ?', (retry_id,)
+        ).fetchall()
+        questions = []
+        for idx, row in enumerate(question_data):
+            question = dict(row)
+            question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
+            questions.append({'index': idx, **question})
+
+        result = conn.execute(
+            'SELECT selected_answers FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
+            (retry_id, student_id)
+        ).fetchone()
+        selected_answers = json.loads(result['selected_answers']) if result and result['selected_answers'] else {}
+
+        conn.close()
+        return render_template(
+            'view_retry_homework.html',
+            retry=retry,
+            questions=questions,
+            student_id=student_id,
+            selected_answers=selected_answers
+        )
+    else:
+        conn.close()
+        return "Unsupported retry type", 400
 
 
 @app.route('/view_homework_teacher/<int:homework_id>/<int:class_id>/<int:teacher_id>')
@@ -886,6 +1119,12 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         correct_answers[idx] = int(question['correct_answer'])  # Sicherstellen, dass die Antwort als Nummer vorliegt
         explanations[idx] = question['explanation']
 
+    # Open Questions abrufen
+    open_questions = conn.execute(
+        'SELECT question, sample_solution, taxonomy, skill_level FROM HomeworkOpenQuestions WHERE homework_id = ?',
+        (homework_id,)
+    ).fetchall()
+
     conn.close()
 
     return render_template(
@@ -895,7 +1134,8 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         class_info={'id': class_id},
         teacher_id=teacher_id,
         correct_answers=correct_answers,
-        explanations=explanations
+        explanations=explanations,
+        open_questions=open_questions
     )
 
 
@@ -920,6 +1160,7 @@ def delete_homework():
 @app.route('/submit_homework', methods=['POST'])
 def submit_homework():
     from datetime import datetime
+    import json
     conn = get_db_connection()
 
     # JSON-Daten aus der Anfrage holen
@@ -928,7 +1169,7 @@ def submit_homework():
     student_id = data.get('student_id')
     correct_count = int(data.get('correct_count'))
     incorrect_count = int(data.get('incorrect_count'))
-    selected_answers = data.get('selected_answers', {})  # <-- get selected answers
+    selected_answers = data.get('selected_answers', {})
 
     # Datum der Abgabe erfassen
     date_submitted = datetime.now().date()
@@ -947,9 +1188,9 @@ def submit_homework():
 
         # Neue Bewertung basierend auf der Leistung
         if correct_count > 7:
-            class_skill_level = min(10, class_skill_level + 1)  # Erhöhen (max 10)
+            class_skill_level = min(10, class_skill_level + 1)
         elif correct_count < 4:
-            class_skill_level = max(1, class_skill_level - 1)  # Senken (min 1)
+            class_skill_level = max(1, class_skill_level - 1)
 
         # Aktualisieren des Class Skill Levels
         conn.execute(
@@ -992,22 +1233,307 @@ def submit_homework():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (homework_id, student_id, correct_count, incorrect_count, date_submitted,
-             class_skill_level, avg_class_skill, json.dumps(selected_answers))  # <-- save as JSON
+             class_skill_level, avg_class_skill, json.dumps(selected_answers))
         )
 
         conn.commit()
         conn.close()
 
         # Erfolgsmeldung mit neuem Skill Level
-        return {
+        return jsonify({
             "message": "Results successfully saved",
             "correct_count": correct_count,
             "class_skill_level": class_skill_level,
             "overall_skill_level": avg_class_skill
-        }, 200
+        }), 200
 
     except Exception as e:
-        return f"Ein Fehler ist aufgetreten: {str(e)}", 500
+        return jsonify({"message": f"Ein Fehler ist aufgetreten: {str(e)}"}), 500
+
+@app.route('/check_open_questions', methods=['POST'])
+def check_open_questions():
+    import openai
+    import json
+    from datetime import datetime
+
+    data = request.get_json()
+    homework_id = data['homework_id']
+    student_id = data['student_id']
+    answers = data['answers']
+
+    conn = get_db_connection()
+
+    for oq_id, answer in answers.items():
+        conn.execute(
+            '''
+            INSERT INTO HomeworkOpenAnswers (homework_id, student_id, open_question_id, answer, date_submitted)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(homework_id, student_id, open_question_id)
+            DO UPDATE SET answer=excluded.answer, date_submitted=excluded.date_submitted
+            ''',
+            (homework_id, student_id, oq_id, answer, datetime.now().isoformat())
+        )
+
+    homework = conn.execute('SELECT * FROM Homework WHERE id = ?', (homework_id,)).fetchone()
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = ?',
+        (homework['class_id'],)
+    ).fetchone()
+    subject = class_info['subject']
+    grade_level = class_info['grade_level']
+    open_questions = conn.execute(
+        'SELECT id, question, sample_solution, taxonomy FROM HomeworkOpenQuestions WHERE homework_id = ? AND id IN (%s)' %
+        ','.join('?'*len(answers)),
+        (homework_id, *answers.keys())
+    ).fetchall()
+
+    questions_for_gpt = []
+    for oq in open_questions:
+        questions_for_gpt.append({
+            "id": oq['id'],
+            "question": oq['question'],
+            "sample_solution": oq['sample_solution'],
+            "taxonomy": oq['taxonomy'],
+            "student_answer": answers[str(oq['id'])]
+        })
+
+    prompt = f"""
+        You are an educational assistant. Please grade the following open questions for a student.
+        For each question, compare the student's answer with the sample solution. 
+        If the answer is correct, reply with "Correct!" and set "is_correct": true.
+        If not, explain what is missing or incorrect, and set "is_correct": false.
+        After all questions, give a short overall feedback and suggest if the student should retry.
+        Formulate the Answers as if you where the students sideckick. Talk directly to Him.
+
+        Homework info:
+        - Subject: {subject}
+        - Grade: {grade_level}
+        - Description: {homework['description']}
+
+        Questions and answers:
+        {json.dumps(questions_for_gpt, ensure_ascii=False, indent=2)}
+
+        Please answer in JSON:
+        {{
+        "feedback": {{
+            "<question_id>": {{"result": "...", "is_correct": true/false}},
+            ...
+        }},
+        "summary": "..."
+        }}
+        """
+    print("=== Prompt an ChatGPT ===")
+    print(prompt)
+    print("========================")
+
+    api_key = os.getenv("CHATGPT_API_KEY")
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data_api = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data_api)
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
+            try:
+                # Versuche, das JSON explizit aus dem Text zu extrahieren
+                json_start = generated_content.index('{')
+                json_end = generated_content.rindex('}')
+                json_content = generated_content[json_start:json_end + 1]
+                gpt_json = json.loads(json_content)
+            except (ValueError, json.JSONDecodeError) as e:
+                print("Fehler beim Parsen der JSON-Antwort:", e)
+                gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+        else:
+            print(f"OpenAI error: {response.status_code} - {response.text}")
+            gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+    except Exception as e:
+        print("OpenAI request failed:", e)
+        gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+
+    # Zähle richtige und falsche Antworten
+    correct_count = 0
+    wrong_count = 0
+    for feedback in gpt_json.get("feedback", {}).values():
+        if feedback.get("is_correct") is True:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
+    # Speichere das Ergebnis in der Datenbank (Upsert)
+    conn.execute(
+        '''
+        INSERT INTO HomeworkOpenQuestionsResults (homework_id, student_id, feedback_json, correct_count, wrong_count, summary, date_submitted)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(homework_id, student_id)
+        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, date_submitted=excluded.date_submitted
+        ''',
+        (
+            homework_id,
+            student_id,
+            json.dumps(gpt_json.get("feedback", {})),
+            correct_count,
+            wrong_count,
+            gpt_json.get("summary", ""),
+            datetime.now().isoformat()
+        )
+    )
+
+    print("Saved OpenQuestionsResults for", homework_id, student_id)
+
+    conn.commit()
+    conn.close()
+    gpt_json["correct_count"] = correct_count
+    gpt_json["wrong_count"] = wrong_count
+    return jsonify(gpt_json)
+
+@app.route('/check_retry_open_questions', methods=['POST'])
+def check_retry_open_questions():
+    import json
+    from datetime import datetime
+    data = request.get_json()
+    retry_id = data['retry_id']
+    student_id = data['student_id']
+    answers = data['answers']
+
+    conn = get_db_connection()
+
+    # Antworten speichern (Upsert)
+    for oq_id, answer in answers.items():
+        conn.execute(
+            '''
+            INSERT INTO HomeworkRetryOpenAnswers (retry_id, student_id, open_question_id, answer, date_submitted)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(retry_id, student_id, open_question_id)
+            DO UPDATE SET answer=excluded.answer, date_submitted=excluded.date_submitted
+            ''',
+            (retry_id, student_id, oq_id, answer, datetime.now().isoformat())
+        )
+
+    homework = conn.execute('SELECT * FROM Homework WHERE id = ?', (homework_id,)).fetchone()
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = ?',
+        (homework['class_id'],)
+    ).fetchone()
+    subject = class_info['subject']
+    grade_level = class_info['grade_level']
+    # Fragen und Musterlösungen laden
+    open_questions = conn.execute(
+        'SELECT id, question, sample_solution, taxonomy FROM HomeworkRetryOpenQuestions WHERE retry_id = ? AND id IN (%s)' %
+        ','.join('?'*len(answers)),
+        (retry_id, *answers.keys())
+    ).fetchall()
+
+    questions_for_gpt = []
+    for oq in open_questions:
+        questions_for_gpt.append({
+            "id": oq['id'],
+            "question": oq['question'],
+            "sample_solution": oq['sample_solution'],
+            "taxonomy": oq['taxonomy'],
+            "student_answer": answers[str(oq['id'])]
+        })
+
+    prompt = f"""
+    You are an educational assistant. Please grade the following open questions for a student.
+    For each question, compare the student's answer with the sample solution. 
+    If the answer is correct, reply with "Correct!" and set "is_correct": true.
+    If not, explain what is missing or incorrect, and set "is_correct": false.
+    After all questions, give a short overall feedback and suggest if the student should retry.
+    Formulate the Answers as if you were the student's sidekick. Talk directly to them.
+
+    Homework info:
+        - Subject: {subject}
+        - Grade: {grade_level}
+        - Description: {homework['description']}
+
+    Questions and answers:
+    {json.dumps(questions_for_gpt, ensure_ascii=False, indent=2)}
+
+    Please answer in JSON:
+    {{
+    "feedback": {{
+        "<question_id>": {{"result": "...", "is_correct": true/false}},
+        ...
+    }},
+    "summary": "..."
+    }}
+    """
+
+    print("=== Prompt an ChatGPT ===")
+    print(prompt)
+    print("========================")
+    # OpenAI-Call wie gehabt...
+    api_key = os.getenv("CHATGPT_API_KEY")
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data_api = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data_api)
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
+            try:
+                json_start = generated_content.index('{')
+                json_end = generated_content.rindex('}')
+                json_content = generated_content[json_start:json_end + 1]
+                gpt_json = json.loads(json_content)
+            except (ValueError, json.JSONDecodeError) as e:
+                gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+        else:
+            gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+    except Exception as e:
+        gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+
+    # Zähle richtige und falsche Antworten
+    correct_count = 0
+    wrong_count = 0
+    for feedback in gpt_json.get("feedback", {}).values():
+        if feedback.get("is_correct") is True:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
+    # Speichere das Ergebnis in der Datenbank (Upsert)
+    conn.execute(
+        '''
+        INSERT INTO HomeworkRetryOpenResults (retry_id, student_id, feedback_json, correct_count, wrong_count, summary, date_submitted)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(retry_id, student_id)
+        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, date_submitted=excluded.date_submitted
+        ''',
+        (
+            retry_id,
+            student_id,
+            json.dumps(gpt_json.get("feedback", {})),
+            correct_count,
+            wrong_count,
+            gpt_json.get("summary", ""),
+            datetime.now().isoformat()
+        )
+    )
+
+    conn.commit()
+    conn.close()
+    gpt_json["correct_count"] = correct_count
+    gpt_json["wrong_count"] = wrong_count
+    return jsonify(gpt_json)
 
     
 @app.route('/edit_homework/<int:homework_id>/<int:class_id>/<int:teacher_id>', methods=['GET', 'POST'])
@@ -1017,6 +1543,7 @@ def edit_homework(homework_id, class_id, teacher_id):
 
     if request.method == 'POST':
         # Daten aktualisieren
+        question_ids = request.form.getlist('question_ids')
         questions = request.form.getlist('questions')
         options_list = request.form.getlist('options')
         correct_answers = request.form.getlist('correct_answers')
@@ -1027,53 +1554,62 @@ def edit_homework(homework_id, class_id, teacher_id):
         # Zähle Fragen pro Schwierigkeitsgrad
         skill_count = {1: 0, 4: 0, 8: 0}
 
-        for idx, question_id in enumerate(request.form.getlist('question_ids')):
-            # Verarbeite die Optionen
-            options = json.dumps(options_list[idx].split(','))
-
-            # Prüfe, ob das Skill-Level gültig ist
+        # Nur so viele Einträge wie tatsächlich MC-Fragen vorhanden sind!
+        for idx in range(len(question_ids)):
             try:
+                options = json.dumps(options_list[idx].split(','))
                 skill_level = int(skill_levels[idx])
-                if skill_level in skill_count:
-                    skill_count[skill_level] += 1
-            except ValueError:
-                return "Ungültiger Schwierigkeitsgrad.", 400
-
-            # Aktualisiere die Frage in der Datenbank
-            conn.execute(
-                '''UPDATE HomeworkQuestions
-                   SET question = ?, options = ?, correct_answer = ?, explanation = ?, taxonomy = ?, skill_level = ?
-                   WHERE id = ?''',
-                (questions[idx], options, correct_answers[idx], explanations[idx], taxonomies[idx], skill_levels[idx], question_id)
-            )
+                conn.execute(
+                    '''UPDATE HomeworkQuestions
+                       SET question = ?, options = ?, correct_answer = ?, explanation = ?, taxonomy = ?, skill_level = ?
+                       WHERE id = ?''',
+                    (questions[idx], options, correct_answers[idx], explanations[idx], taxonomies[idx], skill_levels[idx], question_ids[idx])
+                )
+            except IndexError:
+                return f"Fehler: Index {idx} außerhalb der Listenlänge. Prüfe die Eingabefelder!", 400
 
         # Überprüfe die Bedingung: 10 Fragen pro Schwierigkeitsgrad
         if 'publish' in request.form:
-            if any(count != 10 for count in skill_count.values()):
-                conn.close()
-                return "A homework assignment can only be published if it contains exactly 10 questions per level of difficulty.", 400
-
             # Status auf 'published' setzen
             conn.execute('UPDATE Homework SET status = ? WHERE id = ?', ('published', homework_id))
         else:
             # Status auf 'draft' setzen
             conn.execute('UPDATE Homework SET status = ? WHERE id = ?', ('draft', homework_id))
 
+        # Open Questions aktualisieren
+        open_question_ids = request.form.getlist('open_question_ids')
+        open_questions = request.form.getlist('open_questions')
+        sample_solutions = request.form.getlist('sample_solutions')
+        open_taxonomies = request.form.getlist('open_taxonomies')
+
+        for idx, oq_id in enumerate(open_question_ids):
+            conn.execute(
+                '''UPDATE HomeworkOpenQuestions
+                   SET question = ?, sample_solution = ?, taxonomy = ?
+                   WHERE id = ?''',
+                (open_questions[idx], sample_solutions[idx], open_taxonomies[idx], oq_id)
+            )
+
         conn.commit()
         conn.close()
-
-        # Zurück zur Klassenansicht
         return redirect(url_for('class_details_teacher', class_id=class_id, teacher_id=teacher_id))
 
     # Bestehende Daten laden
     homework = conn.execute('SELECT * FROM Homework WHERE id = ?', (homework_id,)).fetchone()
     questions = conn.execute('SELECT * FROM HomeworkQuestions WHERE homework_id = ?', (homework_id,)).fetchall()
+
+    # Neue Abfrage für Open Questions
+    open_questions = conn.execute(
+        'SELECT * FROM HomeworkOpenQuestions WHERE homework_id = ?', (homework_id,)
+    ).fetchall()
+
     conn.close()
 
     # JSON-Modul zur Vorlage übergeben
     return render_template('edit_homework.html', 
                            homework=homework, 
                            questions=questions, 
+                           open_questions=open_questions,  # <-- Hier übergeben
                            class_id=class_id, 
                            teacher_id=teacher_id, 
                            json=json)
@@ -1114,12 +1650,20 @@ def retry_homework():
     extra_info = data.get('extra_info', '')
     wrong_questions = data.get('wrong_questions', [])
     class_skill_level = data.get('class_skill_level', 1)
+    retry_type = data.get('retry_type', 'mc')
 
     conn = get_db_connection()
 
     # Get homework description
     homework = conn.execute('SELECT description FROM Homework WHERE id = ?', (homework_id,)).fetchone()
     description = homework['description']
+    title = homework['title']
+
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = (SELECT class_id FROM Homework WHERE id = ?)', (homework_id,)
+    ).fetchone()
+    subject = class_info['subject'] if class_info else ''
+    grade_level = class_info['grade_level'] if class_info else ''
 
     # ...vor dem Prompt...
     filtered_wrong_questions = []
@@ -1131,95 +1675,191 @@ def retry_homework():
             "selected": q.get("selected")
         })
 
+    if retry_type == "mc":
+        prompt = f"""
+        You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students. 
+        The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
+        The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
 
-    prompt = f"""
-You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students. 
-The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
-The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
+        Your task:
+        Please create **10 new multiple-choice questions** (4 options per question, answer as index (0-based)) that:
+        - Cover similar topics or concepts as the incorrectly answered questions.
+        - Match the student's current class skill level (1-10 scale, 10 = most advanced).
+        - Help the student improve by addressing the specific gaps identified through their incorrect responses.
+        - Are **not identical** to the original questions but target the same learning objectives.
 
-Your task:
-Please create **10 new multiple-choice questions** (4 options per question, answer as index (0-based)) that:
-- Cover similar topics or concepts as the incorrectly answered questions.
-- Match the student's current class skill level (1-10 scale, 10 = most advanced).
-- Help the student improve by addressing the specific gaps identified through their incorrect responses.
-- Are **not identical** to the original questions but target the same learning objectives.
+        Homework subject: {subject}
+        Homework grade level: {grade_level}
+        Homework title: {title}
+        Homework description: {description}
+        Student class skill level: {class_skill_level}
+        Reason for retry: {reason}
+        Student's additional info: {extra_info}
+        questions the student got wrong:
+        {json.dumps(filtered_wrong_questions, ensure_ascii=False, indent=2)}
+        Please answer only with JSON in this format:
+        [
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}}
+        ]
+        """
 
-Homework description: {description}
-Student class skill level: {class_skill_level}
-Reason for retry: {reason}
-Student's additional info: {extra_info}
-questions the student got wrong:
-{json.dumps(filtered_wrong_questions, ensure_ascii=False, indent=2)}
-Please answer only with JSON in this format:
-[
-    {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}}
-]
-"""
+        print("=== Prompt an ChatGPT ===")
+        print(prompt)
+        print("========================")
+        # OpenAI API call
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        data_api = {
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
+        response = requests.post(url, headers=headers, json=data_api)
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
+            try:
+                json_start = generated_content.index('[')
+                json_end = generated_content.rindex(']')
+                json_content = generated_content[json_start:json_end + 1]
+                questions = json.loads(json_content)
+            except Exception as e:
+                return f"Error parsing JSON: {str(e)}", 500
+        else:
+            return f"OpenAI error: {response.text}", 500
 
-    print("=== Prompt an ChatGPT ===")
-    print(prompt)
-    print("========================")
-    # OpenAI API call
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    data_api = {
-        "model": "gpt-4o",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
-    }
-    response = requests.post(url, headers=headers, json=data_api)
-    if response.status_code == 200:
-        result = response.json()
-        generated_content = result["choices"][0]["message"]["content"]
-        try:
-            json_start = generated_content.index('[')
-            json_end = generated_content.rindex(']')
-            json_content = generated_content[json_start:json_end + 1]
-            questions = json.loads(json_content)
-        except Exception as e:
-            return f"Error parsing JSON: {str(e)}", 500
-    else:
-        return f"OpenAI error: {response.text}", 500
+        # Count previous retries
+        retry_count = conn.execute(
+            'SELECT COUNT(*) FROM HomeworkRetries WHERE homework_id = ? AND student_id = ?',
+            (homework_id, student_id)
+        ).fetchone()[0] + 1
 
-    # Count previous retries
-    retry_count = conn.execute(
-        'SELECT COUNT(*) FROM HomeworkRetries WHERE homework_id = ? AND student_id = ?',
-        (homework_id, student_id)
-    ).fetchone()[0] + 1
-
-    # Save retry meta
-    cursor = conn.execute(
-        '''INSERT INTO HomeworkRetries 
-           (homework_id, student_id, retry_count, reason, extra_info, generated_questions, date_created)
-           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (homework_id, student_id, retry_count, reason, extra_info, json.dumps(questions), datetime.now().isoformat())
-    )
-    retry_id = cursor.lastrowid
-
-    # Save each question in HomeworkRetryQuestions
-    for q in questions:
-        options = json.dumps(q['options'])
-        conn.execute(
-            '''INSERT INTO HomeworkRetryQuestions
-               (retry_id, skill_level, question, correct_answer, explanation, question_type, options)
-               VALUES (?, ?, ?, ?, ?, ?, ?)''',
-            (
-                retry_id,
-                class_skill_level,
-                q['question'],
-                q['answer'],
-                q.get('explanation', ''),
-                'multiple_choice',
-                options
-            )
+        # Save retry meta
+        cursor = conn.execute(
+            '''INSERT INTO HomeworkRetries 
+            (homework_id, student_id, retry_count, reason, extra_info, generated_questions, date_created)
+            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (homework_id, student_id, retry_count, reason, extra_info, json.dumps(questions), datetime.now().isoformat())
         )
+        retry_id = cursor.lastrowid
 
-    conn.commit()
-    conn.close()
-    return {"message": "Retry homework generated"}, 200
+        # Save each question in HomeworkRetryQuestions
+        for q in questions:
+            options = json.dumps(q['options'])
+            conn.execute(
+                '''INSERT INTO HomeworkRetryQuestions
+                (retry_id, skill_level, question, correct_answer, explanation, question_type, options)
+                VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                (
+                    retry_id,
+                    class_skill_level,
+                    q['question'],
+                    q['answer'],
+                    q.get('explanation', ''),
+                    'multiple_choice',
+                    options
+                )
+            )
+
+        conn.commit()
+        conn.close()
+        return {"message": "Retry homework generated"}, 200
+    elif retry_type == "open_questions":
+        prompt = f"""
+    You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students.
+    The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
+    The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
+
+    Your task:
+    Please create **6 new open-ended questions** (each with taxonomy and a sample_solution) that:
+    - Cover similar topics or concepts as the incorrectly answered questions.
+    - Match the student's current class skill level (1-10 scale, 10 = most advanced).
+    - Help the student improve by addressing the specific gaps identified through their incorrect responses.
+    - Are **not identical** to the original questions but target the same learning objectives.
+    - For each question, provide a sample_solution that would be considered a very good answer for a student.
+    - Please provide one question for each of the following taxonomies: Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+
+    Homework subject: {subject}
+    Homework grade level: {grade_level}
+    Homework title: {title}
+    Homework description: {description}
+    Student class skill level: {class_skill_level}
+    Reason for retry: {reason}
+    Student's additional info: {extra_info}
+    Questions the student got wrong:
+    {json.dumps(filtered_wrong_questions, ensure_ascii=False, indent=2)}
+        Please answer only with JSON in this format:
+        [
+          {{"question": "...", "sample_solution": "...", "taxonomy": "..."}},
+          ...
+        ]
+        """
+        print("=== Prompt an ChatGPT ===")
+        print(prompt)
+        print("========================")
+
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        data_api = {
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
+        response = requests.post(url, headers=headers, json=data_api)
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
+            try:
+                json_start = generated_content.index('[')
+                json_end = generated_content.rindex(']')
+                json_content = generated_content[json_start:json_end + 1]
+                questions = json.loads(json_content)
+            except Exception as e:
+                return f"Error parsing JSON: {str(e)}", 500
+        else:
+            return f"OpenAI error: {response.text}", 500
+
+        # Retry-Count
+        retry_count = conn.execute(
+            'SELECT COUNT(*) FROM HomeworkRetries WHERE homework_id = ? AND student_id = ?',
+            (homework_id, student_id)
+        ).fetchone()[0] + 1
+
+        # Speichere Retry-Meta
+        cursor = conn.execute(
+            '''INSERT INTO HomeworkRetries 
+               (homework_id, student_id, retry_count, reason, extra_info, generated_questions, date_created, retry_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (homework_id, student_id, retry_count, reason, extra_info, json.dumps(questions), datetime.now().isoformat(), 'open')
+        )
+        retry_id = cursor.lastrowid
+
+        # Speichere jede Frage in HomeworkRetryOpenQuestions (neue Tabelle!)
+        for q in questions:
+            conn.execute(
+                '''INSERT INTO HomeworkRetryOpenQuestions
+                   (retry_id, skill_level, question, sample_solution, taxonomy)
+                   VALUES (?, ?, ?, ?, ?)''',
+                (
+                    retry_id,
+                    class_skill_level,
+                    q['question'],
+                    q.get('sample_solution', ''),
+                    q.get('taxonomy', '')
+                )
+            )
+
+        conn.commit()
+        conn.close()
+        return {"message": "Retry homework (open questions) generated"}, 200
+    else:
+        return {"message": "Unknown retry type"}, 400
 
 @app.route('/submit_retry_task', methods=['POST'])
 def submit_retry_task():

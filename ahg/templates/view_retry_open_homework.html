@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ retry['title'] }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="top-buttons">
+        <a href="/homework/{{ retry['homework_id'] }}/{{ student_id }}" class="button">Back to Homework</a>
+    </div>
+    <h1>{{ retry['title'] }}</h1>
+    <p>Created: {{ retry['date_created'][:16].replace('T', ' ') }}</p>
+
+    <form id="openq-retry-form">
+        <ol>
+            {% for q in questions %}
+                <li style="margin-bottom:32px;">
+                    <div style="font-weight:600;">{{ q.question }}</div>
+                    <div style="color:#666;"><em>({{ q.taxonomy }})</em></div>
+                    <textarea name="answer_{{ q.id }}" rows="8"
+                        style="width:70%; min-width:260px; max-width:500px; min-height:160px; max-height:320px; border-radius:8px; padding:10px; margin-bottom:8px; resize:vertical;"
+                        placeholder="Write your answer here..."
+                        {% if openq_feedback %}readonly{% endif %}
+                    >{{ openq_answers[q.id|string] if openq_answers[q.id|string] is defined else '' }}</textarea>
+                    {% if openq_feedback and openq_feedback.feedback[q.id|string] is defined %}
+                        <div class="openq-feedback" style="margin-top:8px; color:{{ 'green' if openq_feedback.feedback[q.id|string].is_correct else 'red' }};">
+                            {{ openq_feedback.feedback[q.id|string].result }}
+                        </div>
+                    {% endif %}
+                    <details id="sample_solution_{{ q.id }}" style="display:{% if openq_feedback %}block{% else %}none{% endif %}; margin-top:8px;">
+                        <summary>Show Sample Solution</summary>
+                        <div style="margin-top:6px; color:#444; background:#f8f8fa; border-radius:8px; padding:16px;">
+                            {{ q.sample_solution }}
+                        </div>
+                    </details>
+                </li>
+            {% endfor %}
+        </ol>
+        {% if not openq_feedback %}
+            <button id="check-openq-btn" type="button" class="button" style="margin: 24px auto 0 auto; width: 220px;">Check Open Questions</button>
+        {% endif %}
+        <div id="openq-feedback-summary" style="margin: 24px auto 0 auto; max-width: 500px;"></div>
+    </form>
+    {% if openq_feedback %}
+        <div class="openq-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:500px;">
+            <h3>Open Questions Results</h3>
+            <div style="margin-top:10px;">
+                <b>Correct:</b> {{ openq_feedback.correct_count }}<br>
+                <b>Incorrect:</b> {{ openq_feedback.wrong_count }}<br>
+                <b>Summary:</b> {{ openq_feedback.summary }}
+            </div>
+        </div>
+    {% endif %}
+    <script>
+        document.getElementById('check-openq-btn')?.addEventListener('click', async function() {
+            const answers = {};
+            {% for q in questions %}
+                answers["{{ q.id }}"] = document.querySelector('[name="answer_{{ q.id }}"]').value;
+            {% endfor %}
+            const response = await fetch("/check_retry_open_questions", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    retry_id: {{ retry['id'] }},
+                    student_id: {{ student_id }},
+                    answers: answers
+                })
+            });
+            const data = await response.json();
+            // Feedback pro Frage anzeigen und Sample Solution einblenden
+            {% for q in questions %}
+                document.querySelector('[name="answer_{{ q.id }}"]').setAttribute('readonly', true);
+                document.getElementById('feedback_{{ q.id }}').innerHTML = data.feedback["{{ q.id }}"].result;
+                document.getElementById('sample_solution_{{ q.id }}').style.display = 'block';
+            {% endfor %}
+            // Gesamtfeedback anzeigen
+            document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary +
+                "<br><b>Correct:</b> " + data.correct_count +
+                "<br><b>Incorrect:</b> " + data.wrong_count;
+        });
+    </script>
+</body>
+</html>

@@ -6,19 +6,23 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="top-buttons" style="display: flex; justify-content: space-between; align-items: center;">
+    <!-- Fixed Back Button oben links -->
+    <div class="top-buttons-fixed-left">
         <a href="/class_details_teacher/{{ class_id }}/{{ teacher_id }}" class="button">Back to Class</a>
     </div>
 
     <h1>Edit Homework: {{ homework['title'] }}</h1>
 
-    <form method="POST">
+    <form method="POST" id="edit-form" style="padding-bottom:90px;">
         <input type="hidden" name="class_id" value="{{ homework['class_id'] }}">
         <input type="hidden" name="teacher_id" value="{{ session['teacher_id'] }}">
 
         {% for question in questions %}
             <fieldset>
                 <legend>Question {{ loop.index }}</legend>
+                <div style="margin-bottom:6px; color:#555;">
+                    <strong>Skill Level:</strong> {{ question['skill_level'] }}
+                </div>
                 <input type="hidden" name="question_ids" value="{{ question['id'] }}">
                 
                 <label>Question:</label>
@@ -40,18 +44,43 @@
                     <option value="Applying" {% if question['taxonomy'] == 'Applying' %}selected{% endif %}>Applying</option>
                     <option value="Analyzing" {% if question['taxonomy'] == 'Analyzing' %}selected{% endif %}>Analyzing</option>
                 </select>
-
-                <label>Difficulty Level:</label>
-                <select name="skill_levels" required>
-                    <option value="1" {% if question['skill_level'] == 1 %}selected{% endif %}>1</option>
-                    <option value="4" {% if question['skill_level'] == 4 %}selected{% endif %}>4</option>
-                    <option value="8" {% if question['skill_level'] == 8 %}selected{% endif %}>8</option>
-                </select>
+                <input type="hidden" name="skill_levels" value="{{ question['skill_level'] }}">
             </fieldset>
         {% endfor %}
 
-        <button type="submit" name="save" class="submit-button">Save as Draft</button>
-        <button type="submit" name="publish" class="submit-button">Save and Publish</button>
+        {% if open_questions %}
+            <h2>Open Questions</h2>
+            {% for oq in open_questions %}
+                <fieldset>
+                    <legend>Open Question {{ loop.index }}</legend>
+                    <div style="margin-bottom:6px; color:#555;">
+                        <strong>Skill Level:</strong> {{ oq['skill_level'] }}
+                    </div>
+                    <input type="hidden" name="open_question_ids" value="{{ oq['id'] }}">
+                    <label>Question:</label>
+                    <input type="text" name="open_questions" value="{{ oq['question'] }}" required>
+                    <label>Sample Solution:</label>
+                    <textarea name="sample_solutions" required>{{ oq['sample_solution'] }}</textarea>
+                    <label>Taxonomy:</label>
+                    <select name="open_taxonomies" required>
+                        <option value="Remembering" {% if oq['taxonomy'] == 'Remembering' %}selected{% endif %}>Remembering</option>
+                        <option value="Understanding" {% if oq['taxonomy'] == 'Understanding' %}selected{% endif %}>Understanding</option>
+                        <option value="Applying" {% if oq['taxonomy'] == 'Applying' %}selected{% endif %}>Applying</option>
+                        <option value="Analysing" {% if oq['taxonomy'] == 'Analysing' %}selected{% endif %}>Analysing</option>
+                        <option value="Evaluating" {% if oq['taxonomy'] == 'Evaluating' %}selected{% endif %}>Evaluating</option>
+                        <option value="Creating" {% if oq['taxonomy'] == 'Creating' %}selected{% endif %}>Creating</option>
+                    </select>
+                </fieldset>
+            {% endfor %}
+        {% endif %}
+
+        <!-- Save Buttons: jetzt nicht mehr hier, sondern unten als fixed -->
     </form>
+
+    <!-- Fixed Save Buttons unten -->
+    <div class="bottom-buttons-fixed">
+        <button type="submit" form="edit-form" name="save" class="submit-button">Save as Draft</button>
+        <button type="submit" form="edit-form" name="publish" class="submit-button">Save and Publish</button>
+    </div>
 </body>
 </html>

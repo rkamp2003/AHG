@@ -6,7 +6,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="top-buttons" style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="top-buttons-fixed-vertical">
         <a href="/class_details_teacher/{{ class_info['id'] }}/{{ teacher_id }}" class="button">Back to Class</a>
         <a href="{{ url_for('edit_homework', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}" class="button">Edit Homework</a>
 
@@ -22,29 +22,54 @@
     <h1>{{ homework['title'] }}</h1>
     <p>Created on: {{ homework['date_created'] }}</p>
 
-    <form id="homework-form">
-        <ol>
-            {% for question in questions %}
-                <li>
-                    <p>{{ question['question'] }} 
- <em> <br> ({{ question['taxonomy'] }} - skill_level: {{ question['skill_level'] }})</em></p>
-                    <ul>
-                        {% for option in question['options'] %}
-                            <li>
-                                <label>
-                                    <input type="radio" name="answer_{{ question.index }}" value="{{ option.index }}">
-                                    {{ option.option }}
-                                </label>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                    <span id="result_{{ question.index }}"></span>
-                </li>
-            {% endfor %}
-        </ol>
-
-        <button type="button" onclick="checkAnswers()">Check</button>
-    </form>
+    {% if questions and questions|length > 0 %}
+        <form id="homework-form">
+            <ol>
+                {% for question in questions %}
+                    <li>
+                        <p>
+                            <strong>{{ question['question'] }}</strong>
+                            <br>
+                            <em>({{ question['taxonomy'] }} - skill_level: {{ question['skill_level'] }})</em>
+                        </p>
+                        <ul>
+                            {% for option in question['options'] %}
+                                <li>
+                                    <label>
+                                        <input type="radio" name="answer_{{ question.index }}" value="{{ option.index }}">
+                                        {{ option.option }}
+                                    </label>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                        <span id="result_{{ question.index }}"></span>
+                    </li>
+                {% endfor %}
+            </ol>
+            <button type="button" onclick="checkAnswers()">Check</button>
+        </form>
+    {% elif open_questions and open_questions|length > 0 %}
+        <div class="openq-form" style="background-color:#fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); max-width: 500px; margin: 32px auto;">
+            <h2 style="margin-top:0;">Open Questions</h2>
+            <ol>
+                {% for oq in open_questions %}
+                    <li style="margin-bottom:22px;">
+                        <div>
+                            <strong>{{ oq['question'] }}</strong>
+                            <br>
+                            <em>({{ oq['taxonomy'] }} - skill_level: {{ oq['skill_level'] }})</em>
+                        </div>
+                        <details style="margin-top:8px;">
+                            <summary style="cursor:pointer;">Show Sample Solution</summary>
+                            <div style="margin-top:6px; color:#444;">
+                                {{ oq['sample_solution'] }}
+                            </div>
+                        </details>
+                    </li>
+                {% endfor %}
+            </ol>
+        </div>
+    {% endif %}
 
     <script>
         const correctAnswers = {{ correct_answers | tojson }};

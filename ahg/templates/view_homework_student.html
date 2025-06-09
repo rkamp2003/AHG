@@ -14,7 +14,9 @@
     <h3>{{ class_info.class_name }} - {{ class_info.subject }} (Teacher: {{ class_info.teacher_name }})</h3>
     <p>Created on: {{ homework['date_created'] }}</p>
 
+    {% if questions and questions|length > 0 %}
     <form id="homework-form">
+        <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
         <ol>
             {% for question in questions %}
                 <li>
@@ -28,45 +30,98 @@
                                         {% if selected_answers[question.index|string] is defined and selected_answers[question.index|string] == option.index %}checked{% endif %}
                                         {% if homework_status == "Done" %}disabled{% endif %}>
                                     {{ option.option }}
-                                </label>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                    <span id="result_{{ question.index }}"></span>
-                </li>
-            {% endfor %}
-        </ol>
-
+                            </label>
+                        </li>
+                    {% endfor %}
+                </ul>
+                <span id="result_{{ question.index }}"></span>
+            </li>
+        {% endfor %}
+    </ol>
+    {% if homework_status == "Open" %}
         <button id="check-button" type="button" onclick="checkAnswers()">Check</button>
-        {% if homework_status == "Open" %}
-            <button id="submit-button" type="button" style="display: none;" onclick="submitHomework()">Submit</button>
-        {% endif %}
-    </form>
+        <button id="submit-button" type="button" style="display: none;" onclick="submitHomework()">Submit</button>
+    {% endif %}
+</form>
+{% endif %}
 
-    <!-- Retry-Button -->
-    <div style="display: flex; justify-content: center; margin-top: 16px;">
-        <button id="retry-button" type="button" class="button" style="display:none;" onclick="openRetryModal()">Retry</button>
+{% if open_questions and open_questions|length > 0 %}
+<form id="openq-form" style="background-color:#fff; padding: 32px 28px; border-radius: 14px; box-shadow: 0 0 16px rgba(0,0,0,0.10); max-width: 500px; margin: 40px auto;">
+    <h2 style="margin-top:0;">Open Questions</h2>
+    <ol>
+        {% for oq in open_questions %}
+            <li style="margin-bottom:32px;">
+                <div style="font-size:1.18em; font-weight:600; background:#f5f7fa; border-radius:8px; padding:18px 18px 12px 18px; margin-bottom:8px; word-break:break-word; white-space:pre-line;">
+                    {{ oq['question'] }}
+                    <div style="font-size:0.98em; color:#666; margin-top:8px;">
+                        <em>({{ oq['taxonomy'] }})</em>
+                    </div>
+                </div>
+                <textarea name="answer_{{ oq['id'] }}" rows="8"
+                    style="width:70%; min-width:260px; max-width:500px; min-height:160px; max-height:320px; border-radius:8px; padding:10px; margin-bottom:8px; resize:vertical;"
+                    placeholder="Write your answer here..."
+                    {% if openq_feedback %}readonly{% endif %}
+                >{{ openq_answers[oq['id']|string] if openq_answers[oq['id']|string] is defined else '' }}</textarea>
+                <div id="feedback_{{ oq['id'] }}"></div>
+                {% if openq_feedback and openq_feedback.feedback[oq['id']|string] is defined %}
+                    <div class="openq-feedback" style="margin-top:8px; color:{{ 'green' if openq_feedback.feedback[oq['id']|string].is_correct else 'red' }};">
+                        {{ openq_feedback.feedback[oq['id']|string].result }}
+                    </div>
+                {% endif %}
+                <details id="sample_solution_{{ oq['id'] }}" style="display:{% if openq_feedback %}block{% else %}none{% endif %}; margin-top:8px;">
+                    <summary>Show Sample Solution</summary>
+                    <div style="margin-top:6px; color:#444; background:#f8f8fa; border-radius:8px; padding:16px;">
+                        {{ oq['sample_solution'] }}
+                    </div>
+                </details>
+            </li>
+        {% endfor %}
+    </ol>
+    {% if not openq_feedback %}
+        <button id="check-openq-btn" type="button" class="button" style="margin: 24px auto 0 auto; width: 220px;">Check</button>
+    {% endif %}
+    <div id="openq-feedback-summary" style="margin: 24px auto 0 auto; max-width: 500px;"></div>
+</form>
+{% endif %}
+
+{% if openq_feedback %}
+    <div class="openq-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:500px;">
+        <h3>Open Questions Results</h3>
+        <div style="margin-top:10px;">
+            <b>Correct:</b> {{ openq_feedback.correct_count }}<br>
+            <b>Incorrect:</b> {{ openq_feedback.wrong_count }}<br>
+            <b>Summary:</b> {{ openq_feedback.summary }}
+        </div>
     </div>
+{% endif %}
 
     <!-- Retry-Modal -->
     <div id="retry-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:1000;">
-      <div style="background:#fff; padding:20px; border-radius:8px; max-width:400px; margin:auto;">
-        <h3>Retry Homework</h3>
-        <label>Reason:</label>
-        <select id="retry-reason">
+      <div style="background:#fff; padding:28px 28px 20px 28px; border-radius:14px; max-width:440px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center;">
+        <h3 style="margin-top:0; margin-bottom:18px; text-align:center; font-size:1.5em;">Retry Homework</h3>
+        <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">Retry-Typ wählen:</label>
+        <select id="retry-type" style="margin-bottom:18px; width:80%; padding:6px; border-radius:6px; text-align:center; font-size:1em;">
+          <option value="mc">Multiple Choice</option>
+          <option value="open_questions">Open Questions</option>
+        </select>
+        <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">Reason:</label>
+        <select id="retry-reason" style="margin-bottom:18px; width:80%; padding:6px; border-radius:6px; text-align:center; font-size:1em;">
           <option value="I want more practice">I want more practice</option>
           <option value="I want new questions">I want new questions</option>
           <option value="I want to improve my score">I want to improve my score</option>
           <option value="Other">Other</option>
         </select>
-        <label>Extra info (optional):</label>
-        <textarea id="retry-extra-info" style="width:100%;"></textarea>
-        <button onclick="submitRetry()">Request Retry</button>
-        <button onclick="closeRetryModal()">Cancel</button>
-        <button type="button" onclick="showPrompt()" style="margin-top:8px;">Show Full Prompt</button>
-        <pre id="full-prompt" style="display:none; background:#eee; padding:10px; margin-top:10px; max-width:100%; max-height:300px; overflow-x:auto; overflow-y:auto;"></pre>
+        <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Extra info (optional):</label>
+        <textarea id="retry-extra-info" style="width:90%; min-height:60px; border-radius:6px; padding:6px; margin-bottom:10px; text-align:center;"></textarea>
+        <div style="display:flex; gap:10px; margin-top:10px; width:100%; justify-content:center;">
+          <button onclick="submitRetry()" class="button" style="min-width:100px;">Request Retry</button>
+          <button onclick="closeRetryModal()" class="button" style="min-width:100px;">Cancel</button>
+          <button type="button" onclick="showPrompt()" class="button" style="min-width:120px;">Show Full Prompt</button>
+        </div>
+        <pre id="full-prompt" style="display:none; background:#f6f6f6; padding:12px; margin-top:14px; max-width:100%; max-height:300px; overflow-x:auto; overflow-y:auto; border-radius:8px; font-size:0.97em;"></pre>
       </div>
     </div>
+
 
     <!-- Retry-Tasks-Liste oben rechts -->
     <div class="retry-tasks-fixed">
@@ -87,14 +142,30 @@
         {% endif %}
     </div>
 
+    <!-- Retry-Button -->
+    <div style="display: flex; justify-content: center; margin-top: 16px;">
+        {% if homework_status == "Done" or openq_feedback %}
+            <button id="retry-button" type="button" class="button" onclick="openRetryModal()" style="display:inline-block;">Retry</button>
+        {% endif %}
+    </div>
+
     <script>
         const correctAnswers = {{ correct_answers | tojson }};
         const explanations = {{ explanations | tojson }};
         const questions = {{ questions | tojson }};
         const selectedAnswers = {{ selected_answers | tojson }};
         const homeworkStatus = "{{ homework_status|trim }}";
+        const openq_feedback = {{ openq_feedback | tojson | default('null', true) }};
 
         console.log("homeworkStatus:", homeworkStatus);
+
+        function openRetryModal() {
+            document.getElementById('retry-modal').style.display = 'flex';
+        }
+        
+        function closeRetryModal() {
+            document.getElementById('retry-modal').style.display = 'none';
+        }
 
         function checkAnswers() {
             const form = document.getElementById('homework-form');
@@ -129,16 +200,15 @@
                 }
             }
 
-            if ("{{ homework_status }}" == "Open") {
-                document.getElementById('check-button').style.display = 'none';
-                document.getElementById('submit-button').style.display = 'inline-block';
-            }
-
             window.homeworkResults = { correctCount, incorrectCount };
-            document.getElementById('retry-button').style.display = 'inline-block';
+            window.selectedAnswers = checkedAnswers;
+
+            console.log("homeworkStatus:", homeworkStatus);
+            if (homeworkStatus === "Open") {
+                submitHomework();
+                }
         }
 
-        // Automatisch auswerten, wenn bereits erledigt
         if (homeworkStatus === "Done") {
             window.onload = function() {
                 checkAnswers();
@@ -148,27 +218,83 @@
             };
         }
 
-        function openRetryModal() {
-            document.getElementById('retry-modal').style.display = 'flex';
-        }
-
-        function closeRetryModal() {
-            document.getElementById('retry-modal').style.display = 'none';
+        function submitHomework() {
+            const results = window.homeworkResults;
+        
+            fetch('/submit_homework', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    homework_id: {{ homework['id'] }},
+                    student_id: {{ student_id }},
+                    correct_count: results.correctCount,
+                    incorrect_count: results.incorrectCount,
+                    selected_answers: window.selectedAnswers || {}
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    const message = `
+                        ${data.message}
+                        Correct Answers: ${results.correctCount}
+                        New Class Skill Level: ${data.class_skill_level}
+                        New Overall Skill Level: ${data.overall_skill_level}
+                    `;
+                    alert(message);
+                    window.location.reload();
+                } else {
+                    alert('Error submitting homework.');
+                }
+            })
+            .catch(error => {
+                alert(`Error submitting homework: ${error}`);
+            });
         }
 
         function submitRetry() {
             const reason = document.getElementById('retry-reason').value;
             const extra_info = document.getElementById('retry-extra-info').value;
+            const retryType = document.getElementById('retry-type').value;
 
-            // Finde falsch beantwortete Fragen
-            const wrongQuestions = [];
-            for (let i = 0; i < questions.length; i++) {
-                const radios = document.getElementsByName('answer_' + i);
-                let selected = null;
-                for (let r of radios) if (r.checked) selected = parseInt(r.value);
-                if (selected === undefined || selected !== correctAnswers[i]) {
-                    wrongQuestions.push(questions[i]);
-                }
+            let wrongQuestions = [];
+            if (retryType === "open_questions") {
+                let answer;
+                let correct;
+                {% for oq in open_questions %}
+                    answer = document.querySelector('[name="answer_{{ oq["id"] }}"]')?.value || "";
+                    correct = openq_feedback && openq_feedback.feedback["{{ oq['id'] }}"]?.is_correct;
+                    if (!correct) {
+                        wrongQuestions.push({
+                            question: `{{ oq["question"]|e }}`,
+                            sample_solution: `{{ oq["sample_solution"]|e }}`,
+                            taxonomy: `{{ oq["taxonomy"]|e }}`,
+                            student_answer: answer
+                        });
+                    }
+                {% endfor %}
+            } else {
+                // MC-Logik: Falsche MC-Fragen sammeln
+                let selected;
+                let correct;
+                {% for question in questions %}
+                    selected = null;
+                    const radios_{{ question.index }} = document.getElementsByName('answer_{{ question.index }}');
+                    for (let r = 0; r < radios_{{ question.index }}.length; r++) {
+                        if (radios_{{ question.index }}[r].checked) selected = parseInt(radios_{{ question.index }}[r].value);
+                    }
+                    correct = (selected === {{ correct_answers[question.index] }});
+                    if (!correct) {
+                        wrongQuestions.push({
+                            question: `{{ question["question"]|e }}`,
+                            options: [{% for option in question["options"] %}`{{ option.option|e }}`{% if not loop.last %}, {% endif %}{% endfor %}],
+                            answer: {{ correct_answers[question.index] }},
+                            selected: selected
+                        });
+                    }
+                {% endfor %}
             }
             fetch('/retry_homework', {
                 method: 'POST',
@@ -179,7 +305,8 @@
                     reason: reason,
                     extra_info: extra_info,
                     wrong_questions: wrongQuestions,
-                    class_skill_level: {{ class_skill_level if class_skill_level is not none else 'null' }}
+                    class_skill_level: {{ class_skill_level if class_skill_level is not none else 'null' }},
+                    retry_type: retryType
                 })
             }).then(resp => resp.json()).then(data => {
                 if (data.retry_id) {
@@ -195,21 +322,46 @@
         function showPrompt() {
             const reason = document.getElementById('retry-reason').value;
             const extra_info = document.getElementById('retry-extra-info').value;
+            const retryType = document.getElementById('retry-type').value;
             let wrongQuestions = [];
-            for (let i = 0; i < questions.length; i++) {
-                const radios = document.getElementsByName('answer_' + i);
-                let selected = null;
-                for (let r of radios) if (r.checked) selected = parseInt(r.value);
-                if (selected === undefined || selected !== parseInt(correctAnswers[i])) {
+            let selected;
+            let correct;
+            {% for question in questions %}
+                selected = null;
+                const radios_{{ question.index }} = document.getElementsByName('answer_{{ question.index }}');
+                for (let r = 0; r < radios_{{ question.index }}.length; r++) {
+                    if (radios_{{ question.index }}[r].checked) selected = parseInt(radios_{{ question.index }}[r].value);
+                }
+                correct = (selected === {{ correct_answers[question.index] }});
+                if (!correct) {
                     wrongQuestions.push({
-                        question: questions[i].question,
-                        options: questions[i].options.map(opt => opt.option),
-                        answer: parseInt(correctAnswers[i]),
+                        question: `{{ question["question"]|e }}`,
+                        options: [{% for option in question["options"] %}`{{ option.option|e }}`{% if not loop.last %}, {% endif %}{% endfor %}],
+                        answer: {{ correct_answers[question.index] }},
                         selected: selected
                     });
                 }
-            }
-            const prompt = `
+            {% endfor %}
+            // Zusätzlich falsche offene Fragen sammeln (falls vorhanden)
+            let answer;
+            let openq_correct;
+            {% for oq in open_questions %}
+                answer = document.querySelector('[name="answer_{{ oq["id"] }}"]')?.value || "";
+                openq_correct = openq_feedback && openq_feedback.feedback["{{ oq['id'] }}"]?.is_correct;
+                if (!openq_correct) {
+                    wrongQuestions.push({
+                        question: `{{ oq["question"]|e }}`,
+                        sample_solution: `{{ oq["sample_solution"]|e }}`,
+                        taxonomy: `{{ oq["taxonomy"]|e }}`,
+                        student_answer: answer
+                    });
+                }
+            {% endfor %}
+
+
+            let prompt = "";
+            if (retryType === "open_questions") {
+            prompt = `
 You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students. 
 The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
 The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
@@ -221,6 +373,9 @@ Please create **10 new multiple-choice questions** (4 options per question, answ
 - Help the student improve by addressing the specific gaps identified through their incorrect responses.
 - Are **not identical** to the original questions but target the same learning objectives.
 
+Homework subject: {{ class_info.subject|e }}
+Homework grade level: {{ class_info.grade_level|e }}
+Homework title: {{ homework.title|e }}
 Homework description: {{ homework['description']|e }}
 Student class skill level: {{ class_skill_level }}
 Reason for retry: ${reason}
@@ -231,10 +386,41 @@ Please answer only with JSON in this format:
 [
     {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}
 ]
+`;
+            } else {
+            prompt = `
+You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students.
+The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
+The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
+
+Your task:
+Please create **6 new open-ended questions** (each with taxonomy and a sample_solution) that:
+- Cover similar topics or concepts as the incorrectly answered questions.
+- Match the student's current class skill level (1-10 scale, 10 = most advanced).
+- Help the student improve by addressing the specific gaps identified through their incorrect responses.
+- Are **not identical** to the original questions but target the same learning objectives.
+- For each question, provide a sample_solution that would be considered a very good answer for a student.
+- Please provide one question for each of the following taxonomies: Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+
+Homework subject: {{ class_info.subject|e }}
+Homework grade level: {{ class_info.grade_level|e }}
+Homework title: {{ homework.title|e }}
+Homework description: {{ homework['description']|e }}
+Student class skill level: {{ class_skill_level }}
+Reason for retry: ${reason}
+Student's additional info: ${extra_info}
+Questions the student got wrong:
+${JSON.stringify(wrongQuestions, null, 2)}
+Please answer only with JSON in this format:
+[
+{"question": "...", "sample_solution": "...", "taxonomy": "..."},
+...
+]
     `;
-    document.getElementById('full-prompt').innerText = prompt;
-    document.getElementById('full-prompt').style.display = 'block';
-}
+            }
+            document.getElementById('full-prompt').innerText = prompt;
+            document.getElementById('full-prompt').style.display = 'block';
+        }
 
 
 document.addEventListener('mousedown', function(event) {
@@ -245,6 +431,30 @@ document.addEventListener('mousedown', function(event) {
             closeRetryModal();
         }
     }
+});
+
+document.getElementById('check-openq-btn')?.addEventListener('click', async function() {
+    const answers = {};
+    {% for oq in open_questions %}
+        answers["{{ oq['id'] }}"] = document.querySelector('[name="answer_{{ oq["id"] }}"]').value;
+    {% endfor %}
+    const response = await fetch("{{ url_for('check_open_questions') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            homework_id: {{ homework['id'] }},
+            student_id: {{ student_id }},
+            answers: answers
+        })
+    });
+    const data = await response.json();
+    // Feedback pro Frage anzeigen und Sample Solution einblenden
+    {% for oq in open_questions %}
+        document.getElementById('feedback_{{ oq["id"] }}').innerHTML = data.feedback["{{ oq['id'] }}"].result;
+        document.getElementById('sample_solution_{{ oq["id"] }}').style.display = 'block';
+    {% endfor %}
+    // Gesamtfeedback anzeigen
+    document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary;
 });
     </script>
 </body>

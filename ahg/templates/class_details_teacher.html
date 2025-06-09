@@ -24,7 +24,7 @@
         {% for student in students %}
         <li>
             <a href="/student_details/{{ student['id'] }}/{{ class_info['id'] }}/{{ teacher_id }}">
-                {{ student['name'] }} (Skill Level (Class): {{ student['class_skill_level'] }})
+                {{ student['name'] }} (Class Skill Level: {{ student['class_skill_level'] }})
             </a>
         </li>
         {% endfor %}
@@ -59,18 +59,43 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- Form for New Homework -->
-    <h3>Create New Homework</h3>
-    <p>In "Description," add the general topic of the homework.</p>
-    <form action="/create_homework" method="post">
-        <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
-        <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
-        <label for="title">Title:</label>
-        <input type="text" id="title" name="title" required>
-        <label for="description">Description:</label>
-        <textarea id="description" name="description" required></textarea>
-        <button type="submit">Create Homework</button>
-    </form>
+    <div class="create-content-fixed">
+        <button class="button" onclick="openContentModal()">Create Learning Content</button>
+    </div>
+
+    <div id="content-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:4000;">
+      <div style="background:#fff; padding:28px 28px 20px 28px; border-radius:14px; max-width:440px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center;">
+        <h3 style="margin-top:0; margin-bottom:18px; text-align:center; font-size:1.5em;">Create Learning Content</h3>
+        <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">Content Type:</label>
+        <select id="content-type" onchange="toggleContentFields()" style="margin-bottom:18px; width:80%; padding:6px; border-radius:6px; text-align:center; font-size:1em;">
+          <option value="mc">Multiple Choice</option>
+          <option value="open">Open Question</option>
+          <option value="essay">Essay</option>
+        </select>
+        <div id="mc-fields" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+          <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Title:</label>
+          <input type="text" id="mc-title" style="margin-bottom:10px; width:90%; padding:6px; border-radius:6px; text-align:center;">
+          <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Description:</label>
+          <textarea id="mc-desc" style="width:90%; min-height:60px; border-radius:6px; padding:6px; margin-bottom:10px; text-align:center;"></textarea>
+        </div>
+        <div id="open-fields" style="display:none; width:100%; flex-direction:column; align-items:center;">
+          <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Title:</label>
+          <input type="text" id="open-title" style="margin-bottom:10px; width:90%; padding:6px; border-radius:6px; text-align:center;">
+          <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Description:</label>
+          <textarea id="open-desc" style="width:90%; min-height:60px; border-radius:6px; padding:6px; margin-bottom:10px; text-align:center;"></textarea>
+        </div>
+        <div id="essay-fields" style="display:none; width:100%; flex-direction:column; align-items:center;">
+          <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Essay Prompt:</label>
+          <textarea id="essay-prompt" style="width:90%; min-height:60px; border-radius:6px; padding:6px; margin-bottom:10px; text-align:center;"></textarea>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:10px; width:100%; justify-content:center;">
+          <button onclick="submitContent()" class="button" style="min-width:100px;">Create</button>
+          <button onclick="closeContentModal()" class="button" style="min-width:100px;">Cancel</button>
+          <button type="button" onclick="showContentPrompt()" class="button" style="min-width:120px;">Show Full Prompt</button>
+        </div>
+        <pre id="content-full-prompt" style="display:none; background:#f6f6f6; padding:12px; margin-top:14px; max-width:100%; max-height:300px; overflow-x:auto; overflow-y:auto; border-radius:8px; font-size:0.97em;"></pre>
+      </div>
+    </div>
 
     <script>
         // Average Correct Answers Chart
@@ -184,6 +209,129 @@
         };
         new Chart(skillCtx, skillConfig);
 
+        function openContentModal() {
+            document.getElementById('content-modal').style.display = 'flex';
+        }
+        function closeContentModal() {
+            document.getElementById('content-modal').style.display = 'none';
+        }
+        function toggleContentFields() {
+            const type = document.getElementById('content-type').value;
+            document.getElementById('mc-fields').style.display = (type === 'mc') ? 'block' : 'none';
+            document.getElementById('open-fields').style.display = (type === 'open') ? 'block' : 'none';
+            document.getElementById('essay-fields').style.display = (type === 'essay') ? 'block' : 'none';
+        }
+
+        function submitContent() {
+            const type = document.getElementById('content-type').value;
+            let payload = { type };
+            if (type === 'mc') {
+                payload.title = document.getElementById('mc-title').value;
+                payload.desc = document.getElementById('mc-desc').value;
+                payload.class_id = {{ class_info['id'] }};
+                payload.teacher_id = {{ teacher_id }};
+            }
+            if (type === 'open') {
+                payload.title = document.getElementById('open-title').value;
+                payload.desc = document.getElementById('open-desc').value;
+                payload.class_id = {{ class_info['id'] }};
+                payload.teacher_id = {{ teacher_id }};
+            }
+            if (type === 'essay') {
+                payload.essay_prompt = document.getElementById('essay-prompt').value;
+            }
+
+            fetch('/create_learning_content', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            }).then(resp => resp.json()).then(data => {
+                if (data.redirect_url) {
+                    window.location.href = data.redirect_url;
+                }
+            });
+        }
+        function showContentPrompt() {
+            const type = document.getElementById('content-type').value;
+            let prompt = '';
+            if (type === 'mc') {
+                const title = document.getElementById('mc-title').value;
+                const desc = document.getElementById('mc-desc').value;
+                prompt = `
+Create homework for the subject {{ class_info['subject'] }} in the grade {{ class_info['grade_level'] }}:
+For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
+
+Homework title: ${title}
+Homework description: ${desc}
+
+Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering Understanding Applying Analysing Evaluating Creating.
+1st level of difficulty (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analysing
+2nd level of difficulty (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analysing
+3rd level of difficulty (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analysing
+The homework should only contain multiple-choice questions. 
+Each question should have four possible answers and the correct answer should be returned as an index (0-based).
+
+Create a total of 30 questions: 10 questions per difficulty level.
+Please answer only with JSON content in the following format:
+[
+    {"skill_level": 1, "questions": [
+        {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."}
+    ]},
+    {"skill_level": 4, "questions": [
+        {"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "...", "taxonomy": "..."}
+    ]},
+    {"skill_level": 8, "questions": [
+        {"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "...", "taxonomy": "..."}
+    ]}
+]
+                `;
+            } else if (type === 'open') {
+                const title = document.getElementById('open-title').value;
+                const desc = document.getElementById('open-desc').value;
+                prompt = `
+Create open-ended homework for the subject {{ class_info['subject'] }} in the grade {{ class_info['grade_level'] }}:
+For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
+
+Homework title: ${title}
+Homework description: ${desc}
+
+Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+For each of the following skill levels, generate 6 open-ended questions (one for each taxonomy type):
+- skill_level 1 (easy): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+- skill_level 4 (medium): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+- skill_level 8 (hard): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+
+For each question, also generate a sample solution (model answer) that would be considered a very good answer for a student.
+Please answer only with JSON content in the following format:
+[
+    {"skill_level": 1, "questions": [
+        {"question": "...", "sample_solution": "...", "taxonomy": "Remembering"},
+        ... (total 6 questions, one per taxonomy)
+    ]},
+    {"skill_level": 4, "questions": [
+        ... (6 questions)
+    ]},
+    {"skill_level": 8, "questions": [
+        ... (6 questions)
+    ]}
+]
+                `;
+            } else if (type === 'essay') {
+                const essay = document.getElementById('essay-prompt').value;
+                prompt = `Create an essay task for the following prompt: ${essay}`;
+            }
+            const pre = document.getElementById('content-full-prompt');
+            pre.innerText = prompt.trim();
+            pre.style.display = 'block';
+        }
+
+        // Modal schließen beim Klick außerhalb
+        document.addEventListener('mousedown', function(event) {
+            const modal = document.getElementById('content-modal');
+            if (modal && modal.style.display === 'flex' && event.target === modal) {
+                closeContentModal();
+            }
+        });
     </script>
 </body>
 </html>
