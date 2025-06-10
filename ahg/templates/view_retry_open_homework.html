@@ -9,10 +9,10 @@
     <div class="top-buttons">
         <a href="/homework/{{ retry['homework_id'] }}/{{ student_id }}" class="button">Back to Homework</a>
     </div>
-    <h1>{{ retry['title'] }}</h1>
-    <p>Created: {{ retry['date_created'][:16].replace('T', ' ') }}</p>
 
     <form id="openq-retry-form">
+        <p>Created: {{ retry['date_created'][:16].replace('T', ' ') }}</p>
+        <br>
         <ol>
             {% for q in questions %}
                 <li style="margin-bottom:32px;">
@@ -38,7 +38,7 @@
             {% endfor %}
         </ol>
         {% if not openq_feedback %}
-            <button id="check-openq-btn" type="button" class="button" style="margin: 24px auto 0 auto; width: 220px;">Check Open Questions</button>
+            <button id="check-openq-btn" type="button" class="button" style="margin: 24px auto 0 auto; width: 220px;">Check</button>
         {% endif %}
         <div id="openq-feedback-summary" style="margin: 24px auto 0 auto; max-width: 500px;"></div>
     </form>
@@ -48,7 +48,8 @@
             <div style="margin-top:10px;">
                 <b>Correct:</b> {{ openq_feedback.correct_count }}<br>
                 <b>Incorrect:</b> {{ openq_feedback.wrong_count }}<br>
-                <b>Summary:</b> {{ openq_feedback.summary }}
+                <b>Summary:</b> {{ openq_feedback.summary }}<br>
+                <b>Recommendation:</b> {{ openq_feedback.recommendation }}
             </div>
         </div>
     {% endif %}
@@ -75,9 +76,11 @@
                 document.getElementById('sample_solution_{{ q.id }}').style.display = 'block';
             {% endfor %}
             // Gesamtfeedback anzeigen
-            document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary +
+            document.getElementById('openq-feedback-summary').innerHTML = "<b>Summary:</b><br>" + data.summary +
+                "<br><b>Recommendation:</b> " + data.recommendation +
                 "<br><b>Correct:</b> " + data.correct_count +
                 "<br><b>Incorrect:</b> " + data.wrong_count;
+            setTimeout(() => window.location.reload(), 1000);
         });
     </script>
 </body>

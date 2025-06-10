@@ -19,11 +19,11 @@
     </div>
     
 
-    <h1>{{ homework['title'] }}</h1>
-    <p>Created on: {{ homework['date_created'] }}</p>
-
     {% if questions and questions|length > 0 %}
         <form id="homework-form">
+            <h1>{{ homework['title'] }}</h1>
+            <p>Created on: {{ homework['date_created'] }}</p>
+            <br>
             <ol>
                 {% for question in questions %}
                     <li>

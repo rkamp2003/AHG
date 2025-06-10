@@ -897,11 +897,27 @@ def view_homework_student(homework_id, student_id):
     ).fetchone()
 
     selected_answers = {}
-    if homework_status and homework_status['selected_answers']:
-        try:
-            selected_answers = json.loads(homework_status['selected_answers'])
-        except Exception:
-            selected_answers = {}
+    mc_feedback_summary = ""
+    mc_feedback_recommendation = ""
+    mc_correct_count = 0
+    mc_incorrect_count = 0
+
+    if homework_status and homework_status['status'] == "Done":
+        result = conn.execute(
+            'SELECT mc_feedback_summary, mc_feedback_recommendation, correct_count, incorrect_count FROM HomeworkResults WHERE homework_id = ? AND student_id = ? ORDER BY date_submitted DESC LIMIT 1',
+            (homework_id, student_id)
+        ).fetchone()
+        if result:
+            mc_feedback_summary = result['mc_feedback_summary'] or ""
+            mc_feedback_recommendation = result['mc_feedback_recommendation'] or ""
+            mc_correct_count = result['correct_count'] or 0
+            mc_incorrect_count = result['incorrect_count'] or 0
+
+        if homework_status and homework_status['selected_answers']:
+            try:
+                selected_answers = json.loads(homework_status['selected_answers'])
+            except Exception:
+                selected_answers = {}
 
     # Abrufen des Skill-Levels des Schülers
     student = conn.execute(
@@ -1008,7 +1024,11 @@ def view_homework_student(homework_id, student_id):
         open_questions=open_questions,
         retry_tasks=retry_list,
         openq_answers=openq_answers,
-        openq_feedback=openq_feedback
+        openq_feedback=openq_feedback,
+        mc_correct_count=mc_correct_count,
+        mc_incorrect_count=mc_incorrect_count,
+        mc_feedback_summary=mc_feedback_summary,
+        mc_feedback_recommendation=mc_feedback_recommendation
     )
 
 @app.route('/retry_homework_view/<int:retry_id>/<int:student_id>')
@@ -1069,10 +1089,15 @@ def retry_homework_view(retry_id, student_id):
             questions.append({'index': idx, **question})
 
         result = conn.execute(
-            'SELECT selected_answers FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
+            'SELECT selected_answers, mc_feedback_summary, mc_feedback_recommendation, correct_count, incorrect_count FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
             (retry_id, student_id)
         ).fetchone()
         selected_answers = json.loads(result['selected_answers']) if result and result['selected_answers'] else {}
+
+        mc_feedback_summary = result['mc_feedback_summary'] if result else ""
+        mc_feedback_recommendation = result['mc_feedback_recommendation'] if result else ""
+        mc_correct_count = result['correct_count'] if result else 0
+        mc_incorrect_count = result['incorrect_count'] if result else 0
 
         conn.close()
         return render_template(
@@ -1080,7 +1105,11 @@ def retry_homework_view(retry_id, student_id):
             retry=retry,
             questions=questions,
             student_id=student_id,
-            selected_answers=selected_answers
+            selected_answers=selected_answers,
+            mc_feedback_summary=mc_feedback_summary,
+            mc_feedback_recommendation=mc_feedback_recommendation,
+            mc_correct_count=mc_correct_count,
+            mc_incorrect_count=mc_incorrect_count
         )
     else:
         conn.close()
@@ -1224,16 +1253,101 @@ def submit_homework():
             (avg_class_skill, student_id)
         )
 
-        # Ergebnis speichern mit neuen Skill-Levels und selected_answers
+        # 3. MC-Feedback generieren (KI)
+        # Hole alle Fragen und richtige Antworten
+        questions = conn.execute(
+            'SELECT question, options, correct_answer, explanation, taxonomy FROM HomeworkQuestions WHERE homework_id = ?',
+            (homework_id,)
+        ).fetchall()
+
+        questions_for_gpt = []
+        for idx, q in enumerate(questions):
+            options = json.loads(q['options'])
+            questions_for_gpt.append({
+                "question": q['question'],
+                "options": options,
+                "correct_answer": q['correct_answer'],
+                "student_answer": selected_answers.get(str(idx)),
+                "explanation": q['explanation'],
+                "taxonomy": q['taxonomy']
+            })
+
+        # Prompt für KI
+        class_info = conn.execute(
+            'SELECT subject, grade_level FROM Classes WHERE id = (SELECT class_id FROM Homework WHERE id = ?)', (homework_id,)
+        ).fetchone()
+        subject = class_info['subject'] if class_info else ''
+        grade_level = class_info['grade_level'] if class_info else ''
+
+        mc_prompt = f"""
+You are an educational assistant. Please analyze the following multiple-choice homework results for a student.
+
+- Give a short, motivating summary of the student's performance.
+- Based on the number and type of mistakes, recommend a learning path: Should the student retry with more multiple-choice questions, switch to open questions, or review the material first?
+- Give concrete, actionable advice for improvement.
+- Formulate your answer as if you were the student's sidekick. Talk directly to them.
+
+Homework info:
+- Subject: {subject}
+- Grade: {grade_level}
+
+Questions and answers:
+{json.dumps(questions_for_gpt, ensure_ascii=False, indent=2)}
+
+Please answer in JSON:
+{{
+  "summary": "...",
+  "recommendation": "..."
+}}
+"""
+
+        # KI-Call
+        api_key = os.getenv("CHATGPT_API_KEY")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        data_api = {
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": mc_prompt}],
+            "temperature": 0.7
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=data_api)
+            if response.status_code == 200:
+                result = response.json()
+                generated_content = result["choices"][0]["message"]["content"]
+                try:
+                    json_start = generated_content.index('{')
+                    json_end = generated_content.rindex('}')
+                    json_content = generated_content[json_start:json_end + 1]
+                    gpt_json = json.loads(json_content)
+                    mc_feedback_summary = gpt_json.get("summary", "")
+                    mc_feedback_recommendation = gpt_json.get("recommendation", "")
+                except Exception as e:
+                    mc_feedback_summary = "No summary available."
+                    mc_feedback_recommendation = ""
+            else:
+                mc_feedback_summary = "No summary available."
+                mc_feedback_recommendation = ""
+        except Exception as e:
+            mc_feedback_summary = "No summary available."
+            mc_feedback_recommendation = ""
+
+        # Ergebnis speichern mit neuem Skill-Level, selected_answers und Feedback
         conn.execute(
             '''
             INSERT INTO HomeworkResults (homework_id, student_id, correct_count, 
                                          incorrect_count, date_submitted, 
-                                         new_class_skill_level, new_skill_level, selected_answers)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                         new_class_skill_level, new_skill_level, selected_answers,
+                                         mc_feedback_summary, mc_feedback_recommendation)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (homework_id, student_id, correct_count, incorrect_count, date_submitted,
-             class_skill_level, avg_class_skill, json.dumps(selected_answers))
+             class_skill_level, avg_class_skill, json.dumps(selected_answers),
+             mc_feedback_summary, mc_feedback_recommendation)
         )
 
         conn.commit()
@@ -1302,7 +1416,8 @@ def check_open_questions():
         For each question, compare the student's answer with the sample solution. 
         If the answer is correct, reply with "Correct!" and set "is_correct": true.
         If not, explain what is missing or incorrect, and set "is_correct": false.
-        After all questions, give a short overall feedback and suggest if the student should retry.
+        After all questions, give a short overall feedback as "summary" and a concrete learning path recommendation as "recommendation".
+        Students can Retry by working more open questions or multiple choice questions.
         Formulate the Answers as if you where the students sideckick. Talk directly to Him.
 
         Homework info:
@@ -1319,7 +1434,8 @@ def check_open_questions():
             "<question_id>": {{"result": "...", "is_correct": true/false}},
             ...
         }},
-        "summary": "..."
+        "summary": "...",
+        "recommendation": "..."
         }}
         """
     print("=== Prompt an ChatGPT ===")
@@ -1351,13 +1467,13 @@ def check_open_questions():
                 gpt_json = json.loads(json_content)
             except (ValueError, json.JSONDecodeError) as e:
                 print("Fehler beim Parsen der JSON-Antwort:", e)
-                gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+                gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed.", "recommendation": ""}
         else:
             print(f"OpenAI error: {response.status_code} - {response.text}")
-            gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+            gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed.", "recommendation": ""}
     except Exception as e:
         print("OpenAI request failed:", e)
-        gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+        gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed.", "recommendation": ""}
 
     # Zähle richtige und falsche Antworten
     correct_count = 0
@@ -1371,10 +1487,10 @@ def check_open_questions():
     # Speichere das Ergebnis in der Datenbank (Upsert)
     conn.execute(
         '''
-        INSERT INTO HomeworkOpenQuestionsResults (homework_id, student_id, feedback_json, correct_count, wrong_count, summary, date_submitted)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO HomeworkOpenQuestionsResults (homework_id, student_id, feedback_json, correct_count, wrong_count, summary, recommendation, date_submitted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(homework_id, student_id)
-        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, date_submitted=excluded.date_submitted
+        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, recommendation=excluded.recommendation, date_submitted=excluded.date_submitted
         ''',
         (
             homework_id,
@@ -1383,8 +1499,30 @@ def check_open_questions():
             correct_count,
             wrong_count,
             gpt_json.get("summary", ""),
+            gpt_json.get("recommendation", ""),
             datetime.now().isoformat()
         )
+    )
+
+        # Skill-Level-Logik
+    class_skill_level = conn.execute(
+        'SELECT class_skill_level FROM ClassMembers WHERE student_id = ? AND class_id = (SELECT class_id FROM Homework WHERE id = ?)',
+        (student_id, homework_id)
+    ).fetchone()
+    class_skill_level = class_skill_level['class_skill_level'] if class_skill_level else 5
+
+    # Neue Skill-Berechnung
+    if correct_count <= 2:
+        new_class_skill_level = max(1, class_skill_level - 1)
+    elif correct_count <= 4:
+        new_class_skill_level = class_skill_level
+    else:
+        new_class_skill_level = min(10, class_skill_level + 1)
+
+    # Update in DB
+    conn.execute(
+        'UPDATE ClassMembers SET class_skill_level = ? WHERE student_id = ? AND class_id = (SELECT class_id FROM Homework WHERE id = ?)',
+        (new_class_skill_level, student_id, homework_id)
     )
 
     print("Saved OpenQuestionsResults for", homework_id, student_id)
@@ -1393,16 +1531,15 @@ def check_open_questions():
     conn.close()
     gpt_json["correct_count"] = correct_count
     gpt_json["wrong_count"] = wrong_count
+    gpt_json["class_skill_level"] = new_class_skill_level
     return jsonify(gpt_json)
 
 @app.route('/check_retry_open_questions', methods=['POST'])
 def check_retry_open_questions():
-    import json
-    from datetime import datetime
     data = request.get_json()
-    retry_id = data['retry_id']
-    student_id = data['student_id']
-    answers = data['answers']
+    retry_id = data.get('retry_id')
+    student_id = data.get('student_id')
+    answers = data.get('answers', {})
 
     conn = get_db_connection()
 
@@ -1417,6 +1554,12 @@ def check_retry_open_questions():
             ''',
             (retry_id, student_id, oq_id, answer, datetime.now().isoformat())
         )
+
+    retry = conn.execute('SELECT homework_id FROM HomeworkRetries WHERE id = ?', (retry_id,)).fetchone()
+    if not retry:
+        conn.close()
+        return jsonify({"error": "Retry not found"}), 404
+    homework_id = retry['homework_id']
 
     homework = conn.execute('SELECT * FROM Homework WHERE id = ?', (homework_id,)).fetchone()
     class_info = conn.execute(
@@ -1447,7 +1590,8 @@ def check_retry_open_questions():
     For each question, compare the student's answer with the sample solution. 
     If the answer is correct, reply with "Correct!" and set "is_correct": true.
     If not, explain what is missing or incorrect, and set "is_correct": false.
-    After all questions, give a short overall feedback and suggest if the student should retry.
+    After all questions, give a short overall feedback as "summary" and a concrete learning path recommendation as "recommendation".
+    Students can Retry by working more open questions or multiple choice questions.
     Formulate the Answers as if you were the student's sidekick. Talk directly to them.
 
     Homework info:
@@ -1464,7 +1608,8 @@ def check_retry_open_questions():
         "<question_id>": {{"result": "...", "is_correct": true/false}},
         ...
     }},
-    "summary": "..."
+    "summary": "...",
+    "recommendation": "..."
     }}
     """
 
@@ -1495,11 +1640,11 @@ def check_retry_open_questions():
                 json_content = generated_content[json_start:json_end + 1]
                 gpt_json = json.loads(json_content)
             except (ValueError, json.JSONDecodeError) as e:
-                gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+                gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed.", "recommendation": ""}
         else:
-            gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+            gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed.", "recommendation": ""}
     except Exception as e:
-        gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed."}
+        gpt_json = {"feedback": {}, "summary": "Sorry, automatic grading failed.", "recommendation": ""}
 
     # Zähle richtige und falsche Antworten
     correct_count = 0
@@ -1513,10 +1658,10 @@ def check_retry_open_questions():
     # Speichere das Ergebnis in der Datenbank (Upsert)
     conn.execute(
         '''
-        INSERT INTO HomeworkRetryOpenResults (retry_id, student_id, feedback_json, correct_count, wrong_count, summary, date_submitted)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO HomeworkRetryOpenResults (retry_id, student_id, feedback_json, correct_count, wrong_count, summary, recommendation, date_submitted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(retry_id, student_id)
-        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, date_submitted=excluded.date_submitted
+        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, recommendation=excluded.recommendation, date_submitted=excluded.date_submitted
         ''',
         (
             retry_id,
@@ -1525,6 +1670,7 @@ def check_retry_open_questions():
             correct_count,
             wrong_count,
             gpt_json.get("summary", ""),
+            gpt_json.get("recommendation", ""),
             datetime.now().isoformat()
         )
     )
@@ -1655,7 +1801,7 @@ def retry_homework():
     conn = get_db_connection()
 
     # Get homework description
-    homework = conn.execute('SELECT description FROM Homework WHERE id = ?', (homework_id,)).fetchone()
+    homework = conn.execute('SELECT description, title FROM Homework WHERE id = ?', (homework_id,)).fetchone()
     description = homework['description']
     title = homework['title']
 
@@ -1665,15 +1811,26 @@ def retry_homework():
     subject = class_info['subject'] if class_info else ''
     grade_level = class_info['grade_level'] if class_info else ''
 
-    # ...vor dem Prompt...
     filtered_wrong_questions = []
     for q in wrong_questions:
-        filtered_wrong_questions.append({
-            "question": q.get("question"),
-            "options": [opt["option"] if isinstance(opt, dict) else opt for opt in q.get("options", [])],
-            "answer": q.get("answer"),
-            "selected": q.get("selected")
-        })
+        # MC-Fragen
+        if "options" in q:
+            filtered_wrong_questions.append({
+                "question": q.get("question"),
+                "options": q.get("options"),
+                "answer": q.get("answer"),
+                "selected": q.get("selected"),
+                "explanation": q.get("explanation", ""),
+                "taxonomy": q.get("taxonomy", "")
+            })
+        # Open Questions
+        else:
+            filtered_wrong_questions.append({
+                "question": q.get("question"),
+                "sample_solution": q.get("sample_solution"),
+                "taxonomy": q.get("taxonomy"),
+                "student_answer": q.get("student_answer", "")
+            })
 
     if retry_type == "mc":
         prompt = f"""
@@ -1687,6 +1844,7 @@ def retry_homework():
         - Match the student's current class skill level (1-10 scale, 10 = most advanced).
         - Help the student improve by addressing the specific gaps identified through their incorrect responses.
         - Are **not identical** to the original questions but target the same learning objectives.
+        - Depending on wich Questions the Student got Wrong, provide questions for the following types of Blooms Taxonomie: Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
 
         Homework subject: {subject}
         Homework grade level: {grade_level}
@@ -1699,7 +1857,7 @@ def retry_homework():
         {json.dumps(filtered_wrong_questions, ensure_ascii=False, indent=2)}
         Please answer only with JSON in this format:
         [
-            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}}
+            {{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."}}
         ]
         """
 
@@ -1727,9 +1885,11 @@ def retry_homework():
                 json_content = generated_content[json_start:json_end + 1]
                 questions = json.loads(json_content)
             except Exception as e:
-                return f"Error parsing JSON: {str(e)}", 500
+                conn.close()
+                return jsonify({"error": f"Error parsing JSON: {str(e)}"}), 500
         else:
-            return f"OpenAI error: {response.text}", 500
+            conn.close()
+            return jsonify({"error": f"OpenAI error: {response.text}"}), 500
 
         # Count previous retries
         retry_count = conn.execute(
@@ -1740,9 +1900,9 @@ def retry_homework():
         # Save retry meta
         cursor = conn.execute(
             '''INSERT INTO HomeworkRetries 
-            (homework_id, student_id, retry_count, reason, extra_info, generated_questions, date_created)
-            VALUES (?, ?, ?, ?, ?, ?, ?)''',
-            (homework_id, student_id, retry_count, reason, extra_info, json.dumps(questions), datetime.now().isoformat())
+            (homework_id, student_id, retry_count, reason, extra_info, generated_questions, date_created, retry_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (homework_id, student_id, retry_count, reason, extra_info, json.dumps(questions), datetime.now().isoformat(), 'mc')
         )
         retry_id = cursor.lastrowid
 
@@ -1751,8 +1911,8 @@ def retry_homework():
             options = json.dumps(q['options'])
             conn.execute(
                 '''INSERT INTO HomeworkRetryQuestions
-                (retry_id, skill_level, question, correct_answer, explanation, question_type, options)
-                VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                (retry_id, skill_level, question, correct_answer, explanation, question_type, options, taxonomy)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
                 (
                     retry_id,
                     class_skill_level,
@@ -1760,13 +1920,15 @@ def retry_homework():
                     q['answer'],
                     q.get('explanation', ''),
                     'multiple_choice',
-                    options
+                    options,
+                    q.get('taxonomy', '')
                 )
             )
 
         conn.commit()
         conn.close()
-        return {"message": "Retry homework generated"}, 200
+        return jsonify({"retry_id": retry_id}), 200
+
     elif retry_type == "open_questions":
         prompt = f"""
     You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students.
@@ -1780,7 +1942,7 @@ def retry_homework():
     - Help the student improve by addressing the specific gaps identified through their incorrect responses.
     - Are **not identical** to the original questions but target the same learning objectives.
     - For each question, provide a sample_solution that would be considered a very good answer for a student.
-    - Please provide one question for each of the following taxonomies: Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+    - Depending on wich Questions the Student got Wrong, provide questions for the following types of Blooms Taxonomie: Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
 
     Homework subject: {subject}
     Homework grade level: {grade_level}
@@ -1821,9 +1983,11 @@ def retry_homework():
                 json_content = generated_content[json_start:json_end + 1]
                 questions = json.loads(json_content)
             except Exception as e:
-                return f"Error parsing JSON: {str(e)}", 500
+                conn.close()
+                return jsonify({"error": f"Error parsing JSON: {str(e)}"}), 500
         else:
-            return f"OpenAI error: {response.text}", 500
+            conn.close()
+            return jsonify({"error": f"OpenAI error: {response.text}"}), 500
 
         # Retry-Count
         retry_count = conn.execute(
@@ -1857,9 +2021,11 @@ def retry_homework():
 
         conn.commit()
         conn.close()
-        return {"message": "Retry homework (open questions) generated"}, 200
+        return jsonify({"retry_id": retry_id}), 200
+
     else:
-        return {"message": "Unknown retry type"}, 400
+        conn.close()
+        return jsonify({"error": "Unknown retry type"}), 400
 
 @app.route('/submit_retry_task', methods=['POST'])
 def submit_retry_task():
@@ -1882,16 +2048,109 @@ def submit_retry_task():
         conn.close()
         return {"message": "Already submitted"}, 200
 
+    # Hole die Fragen für diesen Retry
+    questions = conn.execute(
+        'SELECT question, options, correct_answer, explanation FROM HomeworkRetryQuestions WHERE retry_id = ?',
+        (retry_id,)
+    ).fetchall()
+
+    questions_for_gpt = []
+    for idx, q in enumerate(questions):
+        options = json.loads(q['options'])
+        questions_for_gpt.append({
+            "question": q['question'],
+            "options": options,
+            "correct_answer": q['correct_answer'],
+            "student_answer": selected_answers.get(str(idx)),
+            "explanation": q['explanation']
+        })
+
+    # Hole Kontextinfos
+    retry = conn.execute('SELECT homework_id FROM HomeworkRetries WHERE id = ?', (retry_id,)).fetchone()
+    homework_id = retry['homework_id']
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = (SELECT class_id FROM Homework WHERE id = ?)', (homework_id,)
+    ).fetchone()
+    subject = class_info['subject'] if class_info else ''
+    grade_level = class_info['grade_level'] if class_info else ''
+
+    # Prompt für KI
+    prompt = f"""
+You are an educational assistant. Please analyze the following multiple-choice retry homework results for a student.
+
+- Give a short, motivating summary of the student's performance.
+- Based on the number and type of mistakes, recommend a learning path: Should the student retry with more multiple-choice questions, switch to open questions, or review the material first?
+- Give concrete, actionable advice for improvement.
+- Formulate your answer as if you were the student's sidekick. Talk directly to them.
+- A answere is correct if correct_answer and student_answer are the same, for example "correct_answer": 0,"student_answer": 0,
+
+Homework info:
+- Subject: {subject}
+- Grade: {grade_level}
+
+Questions and answers:
+{json.dumps(questions_for_gpt, ensure_ascii=False, indent=2)}
+
+Please answer in JSON:
+{{
+  "summary": "...",
+  "recommendation": "..."
+}}
+"""
+    print("=== Prompt an ChatGPT ===")
+    print(prompt)
+    print("========================")
+    # KI-Call
+    api_key = os.getenv("CHATGPT_API_KEY")
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data_api = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data_api)
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
+            try:
+                json_start = generated_content.index('{')
+                json_end = generated_content.rindex('}')
+                json_content = generated_content[json_start:json_end + 1]
+                gpt_json = json.loads(json_content)
+                mc_feedback_summary = gpt_json.get("summary", "")
+                mc_feedback_recommendation = gpt_json.get("recommendation", "")
+            except Exception as e:
+                mc_feedback_summary = "No summary available."
+                mc_feedback_recommendation = ""
+        else:
+            mc_feedback_summary = "No summary available."
+            mc_feedback_recommendation = ""
+    except Exception as e:
+        mc_feedback_summary = "No summary available."
+        mc_feedback_recommendation = ""
+
     date_submitted = datetime.now().isoformat()
     conn.execute(
         '''INSERT INTO HomeworkRetryResults
-           (retry_id, student_id, selected_answers, correct_count, incorrect_count, date_submitted)
-           VALUES (?, ?, ?, ?, ?, ?)''',
-        (retry_id, student_id, json.dumps(selected_answers), correct_count, incorrect_count, date_submitted)
+           (retry_id, student_id, selected_answers, correct_count, incorrect_count, date_submitted, mc_feedback_summary, mc_feedback_recommendation)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+        (retry_id, student_id, json.dumps(selected_answers), correct_count, incorrect_count, date_submitted, mc_feedback_summary, mc_feedback_recommendation)
     )
     conn.commit()
     conn.close()
-    return {"message": "Retry submitted"}, 200
+    return {
+        "message": "Retry submitted",
+        "mc_feedback_summary": mc_feedback_summary,
+        "mc_feedback_recommendation": mc_feedback_recommendation,
+        "correct_count": correct_count,
+        "incorrect_count": incorrect_count
+    }, 200
 
 
 

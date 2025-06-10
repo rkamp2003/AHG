@@ -10,14 +10,17 @@
         <a href="/homework/{{ retry['homework_id'] }}/{{ student_id }}" class="button">Back to Homework</a>
     </div>
 
-    <h1>{{ retry['title'] }}</h1>
-    <p>Created: {{ retry['date_created'][:16].replace('T', ' ') }}</p>
+
 
     <form id="retry-form">
+        <h1>{{ retry['title'] }}</h1>
+        <p>Created: {{ retry['date_created'][:16].replace('T', ' ') }}</p>
+        <br>
         <ol>
             {% for question in questions %}
                 <li>
                     <p>{{ question.question }}</p>
+                    <div style="color:#666;"><em>({{ question.taxonomy }})</em></div>
                     <ul>
                         {% for option in question.options %}
                             <li>
@@ -37,9 +40,21 @@
             {% endfor %}
         </ol>
         <button id="check-button" type="button" onclick="checkRetryAnswers()">Check</button>
-    
     </form>
 
+    <div id="mc-retry-feedback" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:500px; display:none;"></div>
+    {% if mc_feedback_summary %}
+        <div class="mc-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:500px;">
+            <h3>Retry Results</h3>
+            <div style="margin-top:10px;">
+                <b>Correct:</b> {{ mc_correct_count }}<br>
+                <b>Incorrect:</b> {{ mc_incorrect_count }}<br>
+                <b>Summary:</b> {{ mc_feedback_summary }}<br>
+                <b>Recommendation:</b> {{ mc_feedback_recommendation }}
+            </div>
+        </div>
+    {% endif %}
+    
     <script>
         const questions = {{ questions | tojson }};
         const selectedAnswers = {{ selected_answers | tojson }};
@@ -69,13 +84,13 @@
                 const explanation = questions[i].explanation;
 
                 if (userAnswer === undefined) {
-                    resultSpan.innerText = `❌ No answer selected. Correct: ${correctOption}. Explanation: ${explanation}`;
+                    resultSpan.innerHTML = `<span style="color:red;">❌ No answer selected. Correct: ${correctOption}. Explanation: ${explanation}</span>`;
                     incorrectCount++;
                 } else if (userAnswer === correctAnswer) {
-                    resultSpan.innerText = `✔️ Correct! ${correctOption}. Explanation: ${explanation}`;
+                    resultSpan.innerHTML = `<span style="color:green;">✔️ Correct! ${correctOption}. Explanation: ${explanation}</span>`;
                     correctCount++;
                 } else {
-                    resultSpan.innerText = `❌ Wrong! Correct: ${correctOption}. Explanation: ${explanation}`;
+                    resultSpan.innerHTML = `<span style="color:red;">❌ Wrong! Correct: ${correctOption}. Explanation: ${explanation}</span>`;
                     incorrectCount++;
                 }
             }
@@ -92,7 +107,13 @@
                         correct_count: correctCount,
                         incorrect_count: incorrectCount
                     })
-                }).then(resp => resp.json()).then(data => {
+                }).then(data => {
+                    const feedbackDiv = document.getElementById('mc-retry-feedback');
+                    feedbackDiv.style.display = 'block';
+                    feedbackDiv.innerHTML = `
+                        <b>Correct:</b> ${data.correct_count}<br>
+                        <b>Incorrect:</b> ${data.incorrect_count}<br>
+                    `;
                     alert('Retry task submitted!');
                     window.location.reload();
                 });
@@ -114,11 +135,11 @@
                     const correctOption = questions[i].options.find(opt => opt.index === correctAnswer).option;
                     const explanation = questions[i].explanation;
                     if (userAnswer === undefined) {
-                        resultSpan.innerText = `❌ No answer selected. Correct: ${correctOption}. Explanation: ${explanation}`;
+                        resultSpan.innerHTML = `<span style="color:red;">❌ No answer selected. Correct: ${correctOption}. Explanation: ${explanation}</span>`;
                     } else if (userAnswer === correctAnswer) {
-                        resultSpan.innerText = `✔️ Correct! ${correctOption}. Explanation: ${explanation}`;
+                        resultSpan.innerHTML = `<span style="color:green;">✔️ Correct! ${correctOption}. Explanation: ${explanation}</span>`;
                     } else {
-                        resultSpan.innerText = `❌ Wrong! Correct: ${correctOption}. Explanation: ${explanation}`;
+                        resultSpan.innerHTML = `<span style="color:red;">❌ Wrong! Correct: ${correctOption}. Explanation: ${explanation}</span>`;
                     }
                 }
                 document.getElementById('check-button').style.display = 'none';

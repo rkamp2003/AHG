@@ -10,12 +10,12 @@
         <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Back to Class</a>
     </div>
 
-    <h1>{{ homework['title'] }}</h1>
-    <h3>{{ class_info.class_name }} - {{ class_info.subject }} (Teacher: {{ class_info.teacher_name }})</h3>
-    <p>Created on: {{ homework['date_created'] }}</p>
-
     {% if questions and questions|length > 0 %}
     <form id="homework-form">
+            <h1>{{ homework['title'] }}</h1>
+            <h3>{{ class_info.class_name }} - {{ class_info.subject }} - Teacher: {{ class_info.teacher_name }}</h3>
+            <p>Assigned on: {{ homework['date_created'] }}</p>
+            <br>
         <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
         <ol>
             {% for question in questions %}
@@ -45,9 +45,24 @@
 </form>
 {% endif %}
 
+{% if mc_feedback_summary %}
+    <div class="mc-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:500px;">
+        <h3>Multiple Choice Results</h3>
+        <div style="margin-top:10px;">
+            <b>Correct:</b> {{ mc_correct_count }}<br>
+            <b>Incorrect:</b> {{ mc_incorrect_count }}<br>
+            <b>Summary:</b> {{ mc_feedback_summary }}<br>
+            <b>Recommendation:</b> {{ mc_feedback_recommendation }}
+        </div>
+    </div>
+{% endif %}
+
 {% if open_questions and open_questions|length > 0 %}
 <form id="openq-form" style="background-color:#fff; padding: 32px 28px; border-radius: 14px; box-shadow: 0 0 16px rgba(0,0,0,0.10); max-width: 500px; margin: 40px auto;">
-    <h2 style="margin-top:0;">Open Questions</h2>
+    <h1>{{ homework['title'] }}</h1>
+    <h3>{{ class_info.class_name }} - {{ class_info.subject }} - Teacher: {{ class_info.teacher_name }}</h3>
+    <p>Assigned on: {{ homework['date_created'] }}</p>
+    <br>
     <ol>
         {% for oq in open_questions %}
             <li style="margin-bottom:32px;">
@@ -90,7 +105,8 @@
         <div style="margin-top:10px;">
             <b>Correct:</b> {{ openq_feedback.correct_count }}<br>
             <b>Incorrect:</b> {{ openq_feedback.wrong_count }}<br>
-            <b>Summary:</b> {{ openq_feedback.summary }}
+            <b>Summary:</b> {{ openq_feedback.summary }}<br>
+            <b>Recommendation:</b> {{ openq_feedback.recommendation }}
         </div>
     </div>
 {% endif %}
@@ -213,7 +229,6 @@
             window.onload = function() {
                 checkAnswers();
                 // Check-Button ausblenden, Retry-Button einblenden
-                document.getElementById('check-button').style.display = 'none';
                 document.getElementById('retry-button').style.display = 'inline-block';
             };
         }
@@ -260,42 +275,45 @@
             const retryType = document.getElementById('retry-type').value;
 
             let wrongQuestions = [];
-            if (retryType === "open_questions") {
-                let answer;
-                let correct;
-                {% for oq in open_questions %}
-                    answer = document.querySelector('[name="answer_{{ oq["id"] }}"]')?.value || "";
-                    correct = openq_feedback && openq_feedback.feedback["{{ oq['id'] }}"]?.is_correct;
-                    if (!correct) {
-                        wrongQuestions.push({
-                            question: `{{ oq["question"]|e }}`,
-                            sample_solution: `{{ oq["sample_solution"]|e }}`,
-                            taxonomy: `{{ oq["taxonomy"]|e }}`,
-                            student_answer: answer
-                        });
-                    }
-                {% endfor %}
-            } else {
-                // MC-Logik: Falsche MC-Fragen sammeln
-                let selected;
-                let correct;
-                {% for question in questions %}
-                    selected = null;
-                    const radios_{{ question.index }} = document.getElementsByName('answer_{{ question.index }}');
-                    for (let r = 0; r < radios_{{ question.index }}.length; r++) {
-                        if (radios_{{ question.index }}[r].checked) selected = parseInt(radios_{{ question.index }}[r].value);
-                    }
-                    correct = (selected === {{ correct_answers[question.index] }});
-                    if (!correct) {
-                        wrongQuestions.push({
-                            question: `{{ question["question"]|e }}`,
-                            options: [{% for option in question["options"] %}`{{ option.option|e }}`{% if not loop.last %}, {% endif %}{% endfor %}],
-                            answer: {{ correct_answers[question.index] }},
-                            selected: selected
-                        });
-                    }
-                {% endfor %}
-            }
+
+            // Falsche MC-Fragen sammeln
+            let selected;
+            let correct;
+            {% for question in questions %}
+                selected = null;
+                const radios_{{ question.index }} = document.getElementsByName('answer_{{ question.index }}');
+                for (let r = 0; r < radios_{{ question.index }}.length; r++) {
+                    if (radios_{{ question.index }}[r].checked) selected = parseInt(radios_{{ question.index }}[r].value);
+                }
+                correct = (selected === {{ correct_answers[question.index] }});
+                if (!correct) {
+                    wrongQuestions.push({
+                        question: `{{ question["question"]|e }}`,
+                        options: [{% for option in question["options"] %}`{{ option.option|e }}`{% if not loop.last %}, {% endif %}{% endfor %}],
+                        answer: {{ correct_answers[question.index] }},
+                        selected: selected,
+                        explanation: `{{ question["explanation"]|e }}`,
+                        taxonomy: `{{ question["taxonomy"]|e }}`
+                    });
+                }
+            {% endfor %}
+
+            // Falsche Open Questions sammeln
+            let answer;
+            let openq_correct;
+            {% for oq in open_questions %}
+                answer = document.querySelector('[name="answer_{{ oq["id"] }}"]')?.value || "";
+                openq_correct = openq_feedback && openq_feedback.feedback["{{ oq['id'] }}"]?.is_correct;
+                if (!openq_correct) {
+                    wrongQuestions.push({
+                        question: `{{ oq["question"]|e }}`,
+                        sample_solution: `{{ oq["sample_solution"]|e }}`,
+                        taxonomy: `{{ oq["taxonomy"]|e }}`,
+                        student_answer: answer
+                    });
+                }
+            {% endfor %}
+
             fetch('/retry_homework', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -308,7 +326,7 @@
                     class_skill_level: {{ class_skill_level if class_skill_level is not none else 'null' }},
                     retry_type: retryType
                 })
-            }).then(resp => resp.json()).then(data => {
+            }).then(data => {
                 if (data.retry_id) {
                     window.location.href = `/retry_homework_view/${data.retry_id}/${student_id}`;
                 } else {
@@ -454,7 +472,18 @@ document.getElementById('check-openq-btn')?.addEventListener('click', async func
         document.getElementById('sample_solution_{{ oq["id"] }}').style.display = 'block';
     {% endfor %}
     // Gesamtfeedback anzeigen
-    document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary;
+    document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary +
+    "<br><b>Recommendation:</b> " + data.recommendation;
+        // Zusätzlich: Alert mit Skill-Level (wie bei MC)
+    const message = `
+Open Questions checked!
+Correct Answers: ${data.correct_count}
+Incorrect Answers: ${data.wrong_count}
+New Class Skill Level: ${data.class_skill_level}
+    `;
+    alert(message);
+
+    setTimeout(() => window.location.reload(), 1000);
 });
     </script>
 </body>
