@@ -132,24 +132,36 @@ def class_details_teacher(class_id, teacher_id):
     # Hausaufgaben abrufen
     # Abrufen der Homework-Listen für die spezifische Klasse
     homework_list = conn.execute(
-    '''
-    SELECT Homework.id, Homework.title, Homework.date_created,
-        CASE 
-            WHEN EXISTS (
-                SELECT 1 FROM HomeworkResults
-                WHERE HomeworkResults.homework_id = Homework.id
-            )
-            OR EXISTS (
-                SELECT 1 FROM HomeworkOpenQuestionsResults
-                WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
-            )
-            THEN 'Done'
-            ELSE 'Open'
-        END AS status
-    FROM Homework
-    WHERE Homework.class_id = ?  AND Homework.status = 'published'
-    ''', (class_id,)
-).fetchall()
+        '''
+        SELECT Homework.id, Homework.title, Homework.date_created,
+            CASE 
+                WHEN EXISTS (
+                    SELECT 1 FROM HomeworkResults
+                    WHERE HomeworkResults.homework_id = Homework.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM HomeworkOpenQuestionsResults
+                    WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+                )
+                THEN 'Done'
+                ELSE 'Open'
+            END AS status
+        FROM Homework
+        WHERE Homework.class_id = ? AND Homework.status = 'published' AND Homework.is_team_challenge = 0
+        ''', (class_id,)
+    ).fetchall()
+
+    # Team Challenges für diese Klasse abrufen
+    team_challenges = conn.execute(
+        '''
+        SELECT Homework.id, Homework.title, Homework.date_created,
+            TeamChallenges.start_time, TeamChallenges.end_time, TeamChallenges.goal_score, TeamChallenges.current_score, Homework.status
+        FROM Homework
+        JOIN TeamChallenges ON Homework.id = TeamChallenges.homework_id
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 1 AND Homework.status IN ("draft", "published")
+        ''',
+        (class_id,)
+    ).fetchall()
 
     # Durchschnittswerte für Graphen berechnen
     dates = []
@@ -207,6 +219,7 @@ def class_details_teacher(class_id, teacher_id):
         students=students,
         teacher_id=teacher_id,
         homework_list=homework_list,
+        team_challenges=team_challenges,
         dates=dates,
         titles=titles,
         avg_correct_counts=avg_correct_counts,
@@ -505,25 +518,53 @@ def class_details_student(class_id, student_id):
         '''
         SELECT Homework.id, Homework.title, Homework.date_created,
             CASE 
-                WHEN HomeworkResults.date_submitted IS NOT NULL
-                    OR EXISTS (
-                        SELECT 1 FROM HomeworkOpenQuestionsResults
-                        WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
-                        AND HomeworkOpenQuestionsResults.student_id = ?
-                    )
+                WHEN EXISTS (
+                    SELECT 1 FROM HomeworkResults
+                    WHERE HomeworkResults.homework_id = Homework.id
+                    AND HomeworkResults.student_id = ?
+                )
+                OR EXISTS (
+                    SELECT 1 FROM HomeworkOpenQuestionsResults
+                    WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+                    AND HomeworkOpenQuestionsResults.student_id = ?
+                )
                 THEN 'Done'
                 ELSE 'Open'
             END AS status
         FROM Homework
-        LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id
-            AND HomeworkResults.student_id = ?
-        WHERE Homework.class_id = ?  AND Homework.status = 'published'
-        ''', (student_id, student_id, class_id)
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 0 AND Homework.status = 'published'
+        ''',
+        (student_id, student_id, class_id)
+    ).fetchall()
+
+    team_challenges = conn.execute(
+        '''
+        SELECT Homework.id, Homework.title, Homework.date_created,
+            TeamChallenges.goal_score, TeamChallenges.current_score,
+            CASE 
+                WHEN EXISTS (
+                    SELECT 1 FROM HomeworkResults
+                    WHERE HomeworkResults.homework_id = Homework.id
+                    AND HomeworkResults.student_id = ?
+                )
+                OR EXISTS (
+                    SELECT 1 FROM HomeworkOpenQuestionsResults
+                    WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+                    AND HomeworkOpenQuestionsResults.student_id = ?
+                )
+                THEN 'Done'
+                ELSE 'Open'
+            END AS status
+        FROM Homework
+        JOIN TeamChallenges ON Homework.id = TeamChallenges.homework_id
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 1 AND Homework.status = 'published'
+        ''',
+        (student_id, student_id, class_id)
     ).fetchall()
 
     # Progress calculation
-    total_homework = len(homework_list)
-    completed_homework = sum(1 for hw in homework_list if hw['status'] == 'Done')
+    total_homework = len(homework_list) + len(team_challenges)
+    completed_homework = sum(1 for hw in homework_list if hw['status'] == 'Done') + sum(1 for tc in team_challenges if tc['status'] == 'Done')
     progress_percent = int((completed_homework / total_homework) * 100) if total_homework > 0 else 0
 
     # Daten für Graphen vorbereiten – nur bearbeitete Hausaufgaben
@@ -571,7 +612,8 @@ def class_details_student(class_id, student_id):
         correct_counts=correct_counts,
         skill_levels=skill_levels,
         progress_percent=progress_percent,
-        completed_homework=completed_homework, 
+        completed_homework=completed_homework,
+        team_challenges=team_challenges,
         total_homework=total_homework
     )
 
@@ -620,6 +662,10 @@ def create_homework():
     description = request.form['description']
     title = request.form['title']
     teacher_id = request.form['teacher_id']
+    is_team_challenge = int(request.form.get('is_team_challenge', 0))
+    start_time = request.form.get('start_time')
+    end_time = request.form.get('end_time')
+    goal_score = request.form.get('goal_score')
 
     # Hole Klasseninformationen aus der Datenbank
     conn = get_db_connection()
@@ -699,10 +745,16 @@ def create_homework():
     
 
         cursor = conn.execute(
-            'INSERT INTO Homework (class_id, description, title, date_created) VALUES (?, ?, ?, ?)',
-            (class_id, description, title, datetime.now().date())
+            'INSERT INTO Homework (class_id, description, title, date_created, is_team_challenge) VALUES (?, ?, ?, ?, ?)',
+            (class_id, description, title, datetime.now().date(), is_team_challenge)
         )
         homework_id = cursor.lastrowid
+
+        if is_team_challenge:
+            conn.execute(
+                'INSERT INTO TeamChallenges (homework_id, start_time, end_time, goal_score) VALUES (?, ?, ?, ?)',
+                (homework_id, start_time, end_time, goal_score)
+            )
 
         # Speichern der Fragen
         for question_set in question_data:
@@ -736,13 +788,21 @@ def create_learning_content():
         description = data.get('desc')
         class_id = data.get('class_id')
         teacher_id = data.get('teacher_id')
+        is_team_challenge = int(data.get('is_team_challenge', 0))
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        goal_score = data.get('goal_score')
 
         # Simuliere ein POST-Formular für create_homework
         form_data = MultiDict([
             ('class_id', class_id),
             ('description', description),
             ('title', title),
-            ('teacher_id', teacher_id)
+            ('teacher_id', teacher_id),
+            ('is_team_challenge', is_team_challenge),
+            ('start_time', start_time),
+            ('end_time', end_time),
+            ('goal_score', goal_score)
         ])
         old_form = request.form
         request.form = form_data
@@ -761,6 +821,10 @@ def create_learning_content():
         description = data.get('desc')
         class_id = data.get('class_id')
         teacher_id = data.get('teacher_id')
+        is_team_challenge = int(data.get('is_team_challenge', 0))
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        goal_score = data.get('goal_score')
 
         conn = get_db_connection()
         class_info = conn.execute(
@@ -770,32 +834,32 @@ def create_learning_content():
 
         # Prompt für Open Questions nach Bloom
         prompt = f"""
-Create open-ended homework for the subject {class_info['subject']} in the grade {class_info['grade_level']}:
-For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
+    Create open-ended homework for the subject {class_info['subject']} in the grade {class_info['grade_level']}:
+    For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
 
-Homework description: {description}
+    Homework description: {description}
 
-Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
-For each of the following skill levels, generate 6 open-ended questions (one for each taxonomy type):
-- skill_level 1 (easy): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
-- skill_level 4 (medium): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
-- skill_level 8 (hard): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+    Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+    For each of the following skill levels, generate 6 open-ended questions (one for each taxonomy type):
+    - skill_level 1 (easy): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+    - skill_level 4 (medium): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+    - skill_level 8 (hard): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
 
-For each question, also generate a sample solution (model answer) that would be considered a very good answer for a student.
-Please answer only with JSON content in the following format:
-[
-    {{"skill_level": 1, "questions": [
-        {{"question": "...", "sample_solution": "...", "taxonomy": "Remembering"}},
-        ... (total 6 questions, one per taxonomy)
-    ]}},
-    {{"skill_level": 4, "questions": [
-        ... (6 questions)
-    ]}},
-    {{"skill_level": 8, "questions": [
-        ... (6 questions)
-    ]}}
-]
-"""
+    For each question, also generate a sample solution (model answer) that would be considered a very good answer for a student.
+    Please answer only with JSON content in the following format:
+    [
+        {{"skill_level": 1, "questions": [
+            {{"question": "...", "sample_solution": "...", "taxonomy": "Remembering"}},
+            ... (total 6 questions, one per taxonomy)
+        ]}},
+        {{"skill_level": 4, "questions": [
+            ... (6 questions)
+        ]}},
+        {{"skill_level": 8, "questions": [
+            ... (6 questions)
+        ]}}
+    ]
+    """
         print("=== Prompt an ChatGPT ===")
         print(prompt)
         print("========================")
@@ -812,7 +876,6 @@ Please answer only with JSON content in the following format:
             "temperature": 0.7
         }
 
-        conn = get_db_connection()
         try:
             response = requests.post(url, headers=headers, json=data_api)
             if response.status_code == 200:
@@ -830,12 +893,19 @@ Please answer only with JSON content in the following format:
                 conn.close()
                 return {"message": f"Fehler: {response.status_code} - {response.text}"}, 500
 
-            # Speichere die Aufgabe in Homework
+            # Speichere die Aufgabe in Homework (jetzt mit is_team_challenge)
             cursor = conn.execute(
-                'INSERT INTO Homework (class_id, description, title, date_created, status) VALUES (?, ?, ?, ?, ?)',
-                (class_id, description, title, datetime.now().date(), 'draft')
+                'INSERT INTO Homework (class_id, description, title, date_created, status, is_team_challenge) VALUES (?, ?, ?, ?, ?, ?)',
+                (class_id, description, title, datetime.now().date(), 'draft', is_team_challenge)
             )
             homework_id = cursor.lastrowid
+
+            # Team Challenge ggf. speichern
+            if is_team_challenge:
+                conn.execute(
+                    'INSERT INTO TeamChallenges (homework_id, start_time, end_time, goal_score) VALUES (?, ?, ?, ?)',
+                    (homework_id, start_time, end_time, goal_score)
+                )
 
             # Speichere die Open Questions
             for question_set in open_questions:
@@ -843,8 +913,8 @@ Please answer only with JSON content in the following format:
                 for q in question_set.get("questions", []):
                     conn.execute(
                         '''INSERT INTO HomeworkOpenQuestions
-                           (homework_id, skill_level, question, sample_solution, taxonomy)
-                           VALUES (?, ?, ?, ?, ?)''',
+                        (homework_id, skill_level, question, sample_solution, taxonomy)
+                        VALUES (?, ?, ?, ?, ?)''',
                         (homework_id, skill_level, q["question"], q["sample_solution"], q["taxonomy"])
                     )
 
@@ -952,6 +1022,15 @@ def view_homework_student(homework_id, student_id):
         conn.close()
         return "Fehler: Diese Hausaufgabe existiert nicht.", 404
 
+    goal_score = None
+    current_score = None
+    team_challenge = conn.execute(
+        'SELECT goal_score, current_score FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
+    ).fetchone()
+    if team_challenge:
+        goal_score = team_challenge['goal_score']
+        current_score = team_challenge['current_score']
+
     # Fragen basierend auf Skill-Level abrufen
     question_data = conn.execute(
         'SELECT question, correct_answer, explanation, options, taxonomy, skill_level FROM HomeworkQuestions WHERE homework_id = ? AND skill_level = ?',
@@ -1024,6 +1103,8 @@ def view_homework_student(homework_id, student_id):
         class_skill_level=class_skill_level,
         open_questions=open_questions,
         retry_tasks=retry_list,
+        goal_score=goal_score,
+        current_score=current_score,
         openq_answers=openq_answers,
         openq_feedback=openq_feedback,
         mc_correct_count=mc_correct_count,
@@ -1058,7 +1139,7 @@ def retry_homework_view(retry_id, student_id):
 
         # Lade Feedback, falls vorhanden
         oq_result = conn.execute(
-            'SELECT feedback_json, correct_count, wrong_count, summary FROM HomeworkRetryOpenResults WHERE retry_id = ? AND student_id = ?',
+            'SELECT feedback_json, correct_count, wrong_count, summary, recommendation FROM HomeworkRetryOpenResults WHERE retry_id = ? AND student_id = ?',
             (retry_id, student_id)
         ).fetchone()
         openq_feedback = None
@@ -1067,7 +1148,8 @@ def retry_homework_view(retry_id, student_id):
                 "feedback": json.loads(oq_result["feedback_json"]),
                 "correct_count": oq_result["correct_count"],
                 "wrong_count": oq_result["wrong_count"],
-                "summary": oq_result["summary"]
+                "summary": oq_result["summary"],
+                "recommendation": oq_result["recommendation"]
             }
 
         conn.close()
@@ -1351,10 +1433,17 @@ Please answer in JSON:
              mc_feedback_summary, mc_feedback_recommendation)
         )
 
+         # Team-Punkte gutschreiben, falls TeamChallenge
+        team_challenge = conn.execute(
+            'SELECT id FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
+        ).fetchone()
+
         conn.commit()
         conn.close()
 
         add_points_and_check_level(student_id, correct_count * 2, allow_bonus=True)
+        if team_challenge:
+            add_points_to_team(homework_id, student_id, correct_count * 2, allow_bonus=True)
 
         # Erfolgsmeldung mit neuem Skill Level
         return jsonify({
@@ -1549,10 +1638,17 @@ def check_open_questions():
         (avg_class_skill, student_id)
     )
 
+    # Team-Punkte gutschreiben, falls TeamChallenge
+    team_challenge = conn.execute(
+        'SELECT id FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
+    ).fetchone()
+
     conn.commit()
     conn.close()
 
     add_points_and_check_level(student_id, correct_count * 4, allow_bonus=True)
+    if team_challenge:
+        add_points_to_team(homework_id, student_id, correct_count * 4, allow_bonus=True)
 
     gpt_json["correct_count"] = correct_count
     gpt_json["wrong_count"] = wrong_count
@@ -1686,19 +1782,32 @@ Please answer in JSON:
         (homework_id, student_id)
     ).fetchone()
 
+    team_challenge = conn.execute(
+            'SELECT id FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
+        ).fetchone()
+
     conn.commit()
     conn.close()
 
     if first_retry and first_retry['id'] == retry_id:
         add_points_and_check_level(student_id, correct_count * 1, allow_bonus=False)
-
-    return {
-        "message": "Retry submitted",
+        if team_challenge:
+            add_points_to_team(homework_id, student_id, correct_count, allow_bonus=False)
+        return {
+            "message": "Retry submitted",
+            "mc_feedback_summary": mc_feedback_summary,
+            "mc_feedback_recommendation": mc_feedback_recommendation,
+            "correct_count": correct_count,
+            "incorrect_count": incorrect_count
+        }, 200
+    else:
+        return jsonify({
         "mc_feedback_summary": mc_feedback_summary,
         "mc_feedback_recommendation": mc_feedback_recommendation,
         "correct_count": correct_count,
-        "incorrect_count": incorrect_count
-    }, 200
+        "incorrect_count": incorrect_count,
+        "message": "Already collected points for retry in this HA."
+    })
 
 @app.route('/check_retry_open_questions', methods=['POST'])
 def check_retry_open_questions():
@@ -1851,15 +1960,34 @@ def check_retry_open_questions():
         (homework_id, student_id)
     ).fetchone()
 
+    team_challenge = conn.execute(
+            'SELECT id FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
+        ).fetchone()
+
     conn.commit()
     conn.close()
 
     if first_retry and first_retry['id'] == retry_id:
         add_points_and_check_level(student_id, correct_count * 2, allow_bonus=False)
-
-    gpt_json["correct_count"] = correct_count
-    gpt_json["wrong_count"] = wrong_count
-    return jsonify(gpt_json)
+        if team_challenge:
+            add_points_to_team(homework_id, student_id, correct_count * 2, allow_bonus=False)
+        return jsonify({
+            "message": "Retry submitted",
+            "feedback": gpt_json.get("feedback", {}),
+            "summary": gpt_json.get("summary", ""),
+            "recommendation": gpt_json.get("recommendation", ""),
+            "correct_count": correct_count,
+            "wrong_count": wrong_count
+        }), 200
+    else:
+        return jsonify({
+            "feedback": gpt_json.get("feedback", {}),
+            "summary": gpt_json.get("summary", ""),
+            "recommendation": gpt_json.get("recommendation", ""),
+            "correct_count": correct_count,
+            "wrong_count": wrong_count,
+            "message": "Already collected points for retry in this HA."
+        })
 
     
 @app.route('/edit_homework/<int:homework_id>/<int:class_id>/<int:teacher_id>', methods=['GET', 'POST'])
@@ -2289,6 +2417,42 @@ def get_daily_bonus():
     bonus_left = row['bonus_left'] if row else 30
     return jsonify({"bonus_left": bonus_left})
 
+def add_points_to_team(homework_id, student_id, points_to_add, allow_bonus=True):
+    from datetime import datetime
+    conn = get_db_connection()
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Hole TeamChallenge
+    team_challenge = conn.execute(
+        'SELECT id, current_score FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
+    ).fetchone()
+    if not team_challenge:
+        conn.close()
+        return
+
+    # Hole aktuellen Bonus für heute (pro Schüler, wie bei Solo)
+    bonus_row = conn.execute(
+        'SELECT bonus_left FROM DailyBonus WHERE student_id = ? AND date = ?',
+        (student_id, today)
+    ).fetchone()
+    bonus_left = 30 if not bonus_row else bonus_row['bonus_left']
+
+    # Berechne, wie viele Punkte verdoppelt werden
+    if allow_bonus:
+        double_points = min(points_to_add, bonus_left)
+        normal_points = points_to_add - double_points
+        total_points = double_points * 2 + normal_points
+    else:
+        total_points = points_to_add
+
+    # Addiere zum aktuellen Team-Score
+    new_score = team_challenge['current_score'] + total_points
+    conn.execute(
+        'UPDATE TeamChallenges SET current_score = ? WHERE id = ?',
+        (new_score, team_challenge['id'])
+    )
+    conn.commit()
+    conn.close()
 
 
 if __name__ == '__main__':

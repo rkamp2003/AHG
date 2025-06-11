@@ -20,51 +20,81 @@
         <li>Name: {{ student['name'] }}</li>
         <li>Email: {{ student['email'] }}</li>
         <li>Class Skill Level: {{ student['class_skill_level'] }}</li>
+        <li>
+            <div style="margin-top:8px;">
+                <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:1.05em; margin-bottom:2px;">
+                    Task Completion
+                </div>
+                <div style="display: flex; background: #eee; border-radius: 8px; overflow: hidden; height: 22px; box-shadow: 0 1px 2px #ccc; margin-bottom: 6px; max-width: 600px; margin-left:auto; margin-right:auto;">
+                    {% for i in range(total_homework) %}
+                        <div style="
+                            flex: 1;
+                            background: {% if i < completed_homework %}linear-gradient(90deg, #4fc3f7, #1976d2){% else %}#d3d3d3{% endif %};
+                            height: 100%;
+                            border-right: {% if not loop.last %}1px solid #fff{% else %}none{% endif %};
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            color: #fff;
+                            font-weight: bold;
+                            font-size: 0.95em;
+                            ">
+                            {% if total_homework <= 10 %}{{ i+1 }}{% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+                <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:0.97em;">
+                    {{ completed_homework }} of {{ total_homework }} done
+                </div>
+            </div>
+        </li>
     </ul>
 
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; max-width: 900px; margin: 0 auto 20px auto;">
-        <!-- Homework List (left) -->
-        <div style="flex: 2;">
+    <div style="display: flex; gap: 32px; justify-content: center; margin: 32px auto 20px auto; max-width: 900px;">
+        <!-- Team Challenges -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Team Challenges</h3>
+            <ul class="class-list">
+                {% for tc in team_challenges %}
+                    <li>
+                        <a href="/homework/{{ tc.id }}/{{ student_id }}">
+                            {{ tc.title }} (Created on: {{ tc.date_created }})
+                        </a>
+                        - <strong>Status:</strong>
+                        {% if tc.status == 'Done' %}
+                            <span style="color: green;">Done</span>
+                        {% else %}
+                            <span style="color: orange;">Open</span>
+                        {% endif %}
+                        <br>
+                        <b>Goal:</b> {{ tc.goal_score }} | <b>Current:</b> {{ tc.current_score }}
+                    </li>
+                {% else %}
+                    <li style="color:#888;">No Team Challenges for this class.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Normale Hausaufgaben -->
+        <div style="flex:1; min-width:300px;">
             <h3>Homework</h3>
             <ul class="class-list">
                 {% for homework in homework_list %}
                     <li>
                         <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
-                            {{ homework['title'] }} - assigned on: {{ homework['date_created'] }} - ({{ homework['status'] }})
+                            {{ homework['title'] }} (Created on: {{ homework['date_created'] }})
                         </a>
+                        - <strong>Status:</strong>
                         {% if homework['status'] == "Done" %}
-                            <span class="completed">✔️</span>
+                            <span style="color: green;">Done</span>
                         {% else %}
-                            <span class="pending">❌</span>
+                            <span style="color: orange;">Open</span>
                         {% endif %}
                     </li>
+                {% else %}
+                    <li style="color:#888;">No homework for this class.</li>
                 {% endfor %}
             </ul>
-        </div>
-        <!-- Progress Bar (right) -->
-        <div style="flex: 1; margin-left: 40px;">
-            <h3 style="text-align:center;">Homework Completion</h3>
-            <div style="display: flex; background: #eee; border-radius: 8px; overflow: hidden; height: 28px; box-shadow: 0 1px 2px #ccc; margin-bottom: 10px;">
-                {% for i in range(total_homework) %}
-                    <div style="
-                        flex: 1;
-                        background: {% if i < completed_homework %}linear-gradient(90deg, #4fc3f7, #1976d2){% else %}#d3d3d3{% endif %};
-                        height: 100%;
-                        border-right: {% if not loop.last %}1px solid #fff{% else %}none{% endif %};
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: #fff;
-                        font-weight: bold;
-                        font-size: 1em;
-                        ">
-                        {% if total_homework <= 10 %}{{ i+1 }}{% endif %}
-                    </div>
-                {% endfor %}
-            </div>
-            <div style="text-align:center; color:#4a4a8e; font-weight:bold;">
-                {{ completed_homework }} of {{ total_homework }} done
-            </div>
         </div>
     </div>
 
@@ -86,6 +116,7 @@
         <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
         <button type="submit" class="submit-button danger">Leave Class</button>
     </form>
+
 
     <script>
         // Correct Answers

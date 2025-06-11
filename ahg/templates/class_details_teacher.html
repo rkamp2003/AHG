@@ -30,22 +30,53 @@
         {% endfor %}
     </ul>
 
-    <h3>Homework:</h3>
-    <ul class="class-list">
-        {% for homework in homework_list %}
-            <li>
-                <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
-                    {{ homework['title'] }} (Created on: {{ homework['date_created'] }})
-                </a>
-                - <strong>Status:</strong>
-                {% if homework['status'] == 'published' %}
-                    <span style="color: green;">Published</span>
+    <div style="display: flex; gap: 32px; justify-content: center; margin-top: 32px;">
+        <!-- Team Challenges -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Team Challenges:</h3>
+            <ul class="class-list">
+                {% for tc in team_challenges %}
+                    <li>
+                        <a href="{{ url_for('view_homework_teacher', homework_id=tc.id, class_id=class_info['id'], teacher_id=teacher_id) }}">
+                            {{ tc.title }} (Created on: {{ tc.date_created }})
+                        </a>
+                        - <strong>Status:</strong>
+                        {% if tc.status == 'published' %}
+                            <span style="color: green;">Published</span>
+                        {% else %}
+                            <span style="color: orange;">Draft</span>
+                        {% endif %}
+                        <br>
+                        <b>Goal:</b> {{ tc.goal_score }} | <b>Current:</b> {{ tc.current_score }}
+                    </li>
                 {% else %}
-                    <span style="color: orange;">Draft</span>
-                {% endif %}
-            </li>
-        {% endfor %}
-    </ul>
+                    <li style="color:#888;">No Teamchallanges Created so far.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Normale Hausaufgaben -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Homework:</h3>
+            <ul class="class-list">
+                {% for homework in homework_list %}
+                    <li>
+                        <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
+                            {{ homework['title'] }} (Created on: {{ homework['date_created'] }})
+                        </a>
+                        - <strong>Status:</strong>
+                        {% if homework['status'] == 'published' %}
+                            <span style="color: green;">Published</span>
+                        {% else %}
+                            <span style="color: orange;">Draft</span>
+                        {% endif %}
+                    </li>
+                {% else %}
+                    <li style="color:#888;">Keine normalen Hausaufgaben für diese Klasse.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
 
     <h3>Class Progress</h3>
     <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
@@ -70,7 +101,6 @@
         <select id="content-type" onchange="toggleContentFields()" style="margin-bottom:18px; width:80%; padding:6px; border-radius:6px; text-align:center; font-size:1em;">
           <option value="mc">Multiple Choice</option>
           <option value="open">Open Question</option>
-          <option value="essay">Essay</option>
         </select>
         <div id="mc-fields" style="width:100%; display:flex; flex-direction:column; align-items:center;">
           <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Title:</label>
@@ -87,6 +117,22 @@
         <div id="essay-fields" style="display:none; width:100%; flex-direction:column; align-items:center;">
           <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Essay Prompt:</label>
           <textarea id="essay-prompt" style="width:90%; min-height:60px; border-radius:6px; padding:6px; margin-bottom:10px; text-align:center;"></textarea>
+        </div>
+        <!-- Team Challenge Auswahl -->
+        <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">
+            <input type="checkbox" id="is-team-challenge" onchange="toggleTeamChallengeFields(this.checked)">
+            Team Challenge
+        </label>
+        <div id="team-challenge-fields" style="display:none; width:100%; flex-direction:column; align-items:center; margin-bottom:10px;">
+            <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Start Time:
+                <input type="datetime-local" id="team-start-time" style="margin-bottom:6px; width:90%; padding:6px; border-radius:6px;">
+            </label>
+            <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">End Time:
+                <input type="datetime-local" id="team-end-time" style="margin-bottom:6px; width:90%; padding:6px; border-radius:6px;">
+            </label>
+            <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Goal Score:
+                <input type="number" id="team-goal-score" min="1" style="margin-bottom:6px; width:90%; padding:6px; border-radius:6px;">
+            </label>
         </div>
         <div style="display:flex; gap:10px; margin-top:10px; width:100%; justify-content:center;">
           <button onclick="submitContent()" class="button" style="min-width:100px;">Create</button>
@@ -209,8 +255,24 @@
         };
         new Chart(skillCtx, skillConfig);
 
+        function pad(n) { return n < 10 ? '0' + n : n; }
+        function getLocalDateTimeString(date) {
+            return date.getFullYear() + '-' +
+                pad(date.getMonth() + 1) + '-' +
+                pad(date.getDate()) + 'T' +
+                pad(date.getHours()) + ':' +
+                pad(date.getMinutes());
+        }
+
         function openContentModal() {
             document.getElementById('content-modal').style.display = 'flex';
+
+            // Team Challenge Default-Werte setzen
+            const now = new Date();
+            const in7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            document.getElementById('team-start-time').value = getLocalDateTimeString(now);
+            document.getElementById('team-end-time').value = getLocalDateTimeString(in7days);
+            document.getElementById('team-goal-score').value = 100;
         }
         function closeContentModal() {
             document.getElementById('content-modal').style.display = 'none';
@@ -240,6 +302,18 @@
             if (type === 'essay') {
                 payload.essay_prompt = document.getElementById('essay-prompt').value;
             }
+
+            // Team Challenge Felder
+            const isTeam = document.getElementById('is-team-challenge').checked;
+            payload.is_team_challenge = isTeam ? 1 : 0;
+            if (isTeam) {
+                payload.start_time = document.getElementById('team-start-time').value;
+                payload.end_time = document.getElementById('team-end-time').value;
+                payload.goal_score = document.getElementById('team-goal-score').value;
+            }
+
+            // Debug-Ausgabe
+            console.log("Payload an Backend:", payload);
 
             fetch('/create_learning_content', {
                 method: 'POST',
@@ -332,6 +406,10 @@ Please answer only with JSON content in the following format:
                 closeContentModal();
             }
         });
+
+        function toggleTeamChallengeFields(show) {
+            document.getElementById('team-challenge-fields').style.display = show ? 'block' : 'none';
+        }
     </script>
 </body>
 </html>

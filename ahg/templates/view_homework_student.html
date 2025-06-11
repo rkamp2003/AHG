@@ -10,6 +10,36 @@
         <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Back to Class</a>
     </div>
 
+    {% if goal_score is defined and current_score is defined %}
+    <div style="max-width: 500px; margin: 32px auto 24px auto; padding: 18px 24px; background: #f7f7ff; border-radius: 12px; box-shadow: 0 2px 8px rgba(80,80,160,0.07);">
+        <div style="font-weight: bold; color: #4a4a8e; margin-bottom: 8px; text-align:center;">
+            Team Challenge Progress
+        </div>
+        <div style="width: 100%; background: #e0e0e0; border-radius: 8px; height: 26px; overflow: hidden; margin-bottom: 8px;">
+            <div style="
+                width: {% if current_score > 0 and goal_score > 0 %}{{ (current_score / goal_score * 100) }}%{% else %}0{% endif %};
+                background: linear-gradient(90deg, #4fc3f7, #1976d2);
+                height: 100%;
+                border-radius: 8px 0 0 8px;
+                transition: width 0.5s;
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                color: transparent;
+                font-weight: bold;
+                font-size: 1em;
+                padding-right: 0;
+                min-width: 0;
+            ">
+                <!-- Keine Punkteanzeige im Balken -->
+            </div>
+        </div>
+        <div style="text-align:center; color:#4a4a8e; font-size:0.98em;">
+            Points: <b>{{ current_score }}</b> &nbsp;|&nbsp; Goal: <b>{{ goal_score }}</b>
+        </div>
+    </div>
+    {% endif %}
+
     {% if questions and questions|length > 0 %}
     <form id="homework-form">
             <h1>{{ homework['title'] }}</h1>

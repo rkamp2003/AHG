@@ -120,11 +120,13 @@
                 .then(response => response.json())
                 .then(data => {
                     let pointsInfo = "";
-                    if (data.message && data.message.includes("Already submitted")) {
-                        pointsInfo = `<span style="color:#d00;font-weight:bold;">Sorry, no points because already points for other retry in this HA.</span>`;
+                    if (data.message && data.message.includes("Already collected points for retry in this HA.")) {
+                        pointsInfo = `<span style="color:#d00;font-weight:bold;">Already collected points for retry in this HA.</span>`;
+                        showSuccessModal(data.correct_count, pointsInfo);
+                    } else if (data.message && data.message.includes("Already submitted")) {
+                        pointsInfo = `<span style="color:#d00;font-weight:bold;">Already submitted for this retry.</span>`;
                         showSuccessModal(data.correct_count, pointsInfo);
                     } else {
-                        // Punkteberechnung (1 Punkt pro richtige Antwort, kein Bonus bei Retry)
                         let basePoints = correctCount * 1;
                         pointsInfo = `<b>Points:</b> <b>${basePoints}</b>`;
                         showSuccessModal(data.correct_count, pointsInfo);
@@ -136,14 +138,10 @@
 
             // Retry-Button jetzt anzeigen
             document.getElementById('retry-button').style.display = 'inline-block';
-
-            // Success Modal anzeigen
-            showSuccessModal(correctCount, pointsInfo);
         }
 
         function showSuccessModal(correctCount, pointsInfo) {
             const content = `
-                <div style="margin-bottom:10px;">Retry submitted!</div>
                 <div><b>Correct Answers:</b> ${correctCount}</div>
                 ${pointsInfo}
             `;

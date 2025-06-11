@@ -23,6 +23,7 @@
                         placeholder="Write your answer here..."
                         {% if openq_feedback %}readonly{% endif %}
                     >{{ openq_answers[q.id|string] if openq_answers[q.id|string] is defined else '' }}</textarea>
+                    <div id="feedback_{{ q.id }}"></div>
                     {% if openq_feedback and openq_feedback.feedback[q.id|string] is defined %}
                         <div class="openq-feedback" style="margin-top:8px; color:{{ 'green' if openq_feedback.feedback[q.id|string].is_correct else 'red' }};">
                             {{ openq_feedback.feedback[q.id|string].result }}
@@ -53,6 +54,13 @@
             </div>
         </div>
     {% endif %}
+    <div id="success-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:2000;">
+      <div style="background:#fff; padding:28px 28px 20px 28px; border-radius:14px; max-width:440px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center;">
+        <h3 style="margin-top:0; margin-bottom:18px; text-align:center; font-size:1.5em;">Retry Submitted!</h3>
+        <div id="success-modal-content" style="font-size:1.1em; margin-bottom:18px; text-align:center;"></div>
+        <button onclick="closeSuccessModal()" class="button" style="min-width:120px;">OK</button>
+      </div>
+    </div>
     <script>
         document.getElementById('check-openq-btn')?.addEventListener('click', async function() {
             const answers = {};
@@ -69,55 +77,38 @@
                 })
             });
             const data = await response.json();
-            // Feedback pro Frage anzeigen und Sample Solution einblenden
+            // Feedback anzeigen (wie gehabt)
             {% for q in questions %}
                 document.querySelector('[name="answer_{{ q.id }}"]').setAttribute('readonly', true);
                 document.getElementById('feedback_{{ q.id }}').innerHTML = data.feedback["{{ q.id }}"].result;
                 document.getElementById('sample_solution_{{ q.id }}').style.display = 'block';
             {% endfor %}
-            // Gesamtfeedback anzeigen
+            // Punkte-Popup anzeigen
             let pointsInfo = "";
-            if (data.message && data.message.includes("Already submitted")) {
+            if (data.message && data.message.includes("Already collected points for retry in this HA.")) {
+                pointsInfo = `<span style="color:#d00;font-weight:bold;">Already collected points for retry in this HA.</span>`;
+            } else if (data.message && data.message.includes("Already submitted")) {
                 pointsInfo = `<span style="color:#d00;font-weight:bold;">Sorry, no points because already points for other retry in this HA.</span>`;
-                document.getElementById('openq-feedback-summary').innerHTML =
-                    "<b>Summary:</b><br>" + data.summary +
-                    "<br><b>Recommendation:</b> " + data.recommendation +
-                    "<br><b>Correct:</b> " + data.correct_count +
-                    "<br><b>Incorrect:</b> " + data.wrong_count +
-                    "<br>" + pointsInfo;
             } else {
-                // Punkteberechnung (2 Punkte pro richtige Antwort, ggf. Bonus)
-                fetch(`/get_daily_bonus?student_id={{ student_id }}`)
-                    .then(resp => resp.json())
-                    .then(bonusData => {
-                        let basePoints = data.correct_count * 2;
-                        let bonusLeft = bonusData.bonus_left ?? 0;
-                        let doublePoints = Math.min(basePoints, bonusLeft);
-                        let normalPoints = basePoints - doublePoints;
-                        let totalPoints = doublePoints * 2 + normalPoints;
-                        if (doublePoints > 0) {
-                            pointsInfo = `<b>Points:</b> ${basePoints} <span style="color:#4ad991;font-weight:bold;">×2 Daily Bonus</span> = <b>${totalPoints}</b>`;
-                        } else {
-                            pointsInfo = `<b>Points:</b> <b>${basePoints}</b>`;
-                        }
-                        document.getElementById('openq-feedback-summary').innerHTML =
-                            "<b>Summary:</b><br>" + data.summary +
-                            "<br><b>Recommendation:</b> " + data.recommendation +
-                            "<br><b>Correct:</b> " + data.correct_count +
-                            "<br><b>Incorrect:</b> " + data.wrong_count +
-                            "<br>" + pointsInfo;
-                    })
-                    .catch(() => {
-                        document.getElementById('openq-feedback-summary').innerHTML =
-                            "<b>Summary:</b><br>" + data.summary +
-                            "<br><b>Recommendation:</b> " + data.recommendation +
-                            "<br><b>Correct:</b> " + data.correct_count +
-                            "<br><b>Incorrect:</b> " + data.wrong_count +
-                            `<br><b>Points:</b> <b>${data.correct_count * 2}</b>`;
-                    });
+                let basePoints = data.correct_count * 2;
+                pointsInfo = `<b>Points:</b> <b>${basePoints}</b>`;
             }
-            setTimeout(() => window.location.reload(), 1000);
+            showSuccessModal(data.correct_count, pointsInfo);
         });
+
+        function showSuccessModal(correctCount, pointsInfo) {
+            const content = `
+                <div><b>Correct Answers:</b> ${correctCount}</div>
+                ${pointsInfo}
+            `;
+            document.getElementById('success-modal-content').innerHTML = content;
+            document.getElementById('success-modal').style.display = 'flex';
+        }
+
+        function closeSuccessModal() {
+            document.getElementById('success-modal').style.display = 'none';
+            window.location.reload();
+        }
     </script>
 </body>
 </html>
