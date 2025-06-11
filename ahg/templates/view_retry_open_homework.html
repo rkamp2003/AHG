@@ -76,10 +76,46 @@
                 document.getElementById('sample_solution_{{ q.id }}').style.display = 'block';
             {% endfor %}
             // Gesamtfeedback anzeigen
-            document.getElementById('openq-feedback-summary').innerHTML = "<b>Summary:</b><br>" + data.summary +
-                "<br><b>Recommendation:</b> " + data.recommendation +
-                "<br><b>Correct:</b> " + data.correct_count +
-                "<br><b>Incorrect:</b> " + data.wrong_count;
+            let pointsInfo = "";
+            if (data.message && data.message.includes("Already submitted")) {
+                pointsInfo = `<span style="color:#d00;font-weight:bold;">Sorry, no points because already points for other retry in this HA.</span>`;
+                document.getElementById('openq-feedback-summary').innerHTML =
+                    "<b>Summary:</b><br>" + data.summary +
+                    "<br><b>Recommendation:</b> " + data.recommendation +
+                    "<br><b>Correct:</b> " + data.correct_count +
+                    "<br><b>Incorrect:</b> " + data.wrong_count +
+                    "<br>" + pointsInfo;
+            } else {
+                // Punkteberechnung (2 Punkte pro richtige Antwort, ggf. Bonus)
+                fetch(`/get_daily_bonus?student_id={{ student_id }}`)
+                    .then(resp => resp.json())
+                    .then(bonusData => {
+                        let basePoints = data.correct_count * 2;
+                        let bonusLeft = bonusData.bonus_left ?? 0;
+                        let doublePoints = Math.min(basePoints, bonusLeft);
+                        let normalPoints = basePoints - doublePoints;
+                        let totalPoints = doublePoints * 2 + normalPoints;
+                        if (doublePoints > 0) {
+                            pointsInfo = `<b>Points:</b> ${basePoints} <span style="color:#4ad991;font-weight:bold;">×2 Daily Bonus</span> = <b>${totalPoints}</b>`;
+                        } else {
+                            pointsInfo = `<b>Points:</b> <b>${basePoints}</b>`;
+                        }
+                        document.getElementById('openq-feedback-summary').innerHTML =
+                            "<b>Summary:</b><br>" + data.summary +
+                            "<br><b>Recommendation:</b> " + data.recommendation +
+                            "<br><b>Correct:</b> " + data.correct_count +
+                            "<br><b>Incorrect:</b> " + data.wrong_count +
+                            "<br>" + pointsInfo;
+                    })
+                    .catch(() => {
+                        document.getElementById('openq-feedback-summary').innerHTML =
+                            "<b>Summary:</b><br>" + data.summary +
+                            "<br><b>Recommendation:</b> " + data.recommendation +
+                            "<br><b>Correct:</b> " + data.correct_count +
+                            "<br><b>Incorrect:</b> " + data.wrong_count +
+                            `<br><b>Points:</b> <b>${data.correct_count * 2}</b>`;
+                    });
+            }
             setTimeout(() => window.location.reload(), 1000);
         });
     </script>

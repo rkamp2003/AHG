@@ -989,7 +989,7 @@ def view_homework_student(homework_id, student_id):
 
     # Lade Open-Question-Feedback, falls vorhanden
     oq_result = conn.execute(
-        'SELECT feedback_json, correct_count, wrong_count, summary FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND student_id = ?',
+        'SELECT feedback_json, correct_count, wrong_count, summary, recommendation FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND student_id = ?',
         (homework_id, student_id)
     ).fetchone()
     openq_feedback = None
@@ -998,7 +998,8 @@ def view_homework_student(homework_id, student_id):
             "feedback": json.loads(oq_result["feedback_json"]),
             "correct_count": oq_result["correct_count"],
             "wrong_count": oq_result["wrong_count"],
-            "summary": oq_result["summary"]
+            "summary": oq_result["summary"],
+            "recommendation": oq_result["recommendation"]
         }
     else:
         openq_feedback = None
@@ -1353,6 +1354,8 @@ Please answer in JSON:
         conn.commit()
         conn.close()
 
+        add_points_and_check_level(student_id, correct_count * 2, allow_bonus=True)
+
         # Erfolgsmeldung mit neuem Skill Level
         return jsonify({
             "message": "Results successfully saved",
@@ -1527,12 +1530,175 @@ def check_open_questions():
 
     print("Saved OpenQuestionsResults for", homework_id, student_id)
 
+    conn = get_db_connection()
+    avg_class_skill = conn.execute(
+        '''
+        SELECT ROUND(AVG(class_skill_level), 0) as avg_skill
+        FROM ClassMembers
+        WHERE student_id = ?
+        ''',
+        (student_id,)
+    ).fetchone()['avg_skill']
+
+    conn.execute(
+        '''
+        UPDATE Participants
+        SET skill_level = ?
+        WHERE id = ?
+        ''',
+        (avg_class_skill, student_id)
+    )
+
     conn.commit()
     conn.close()
+
+    add_points_and_check_level(student_id, correct_count * 4, allow_bonus=True)
+
     gpt_json["correct_count"] = correct_count
     gpt_json["wrong_count"] = wrong_count
     gpt_json["class_skill_level"] = new_class_skill_level
+    gpt_json["overall_skill_level"] = avg_class_skill
     return jsonify(gpt_json)
+
+@app.route('/submit_retry_task', methods=['POST'])
+def submit_retry_task():
+    from datetime import datetime
+    conn = get_db_connection()
+    data = request.get_json()
+    retry_id = data.get('retry_id')
+    student_id = data.get('student_id')
+    correct_count = int(data.get('correct_count'))
+    incorrect_count = int(data.get('incorrect_count'))
+    selected_answers = data.get('selected_answers', {})
+
+    # Prüfe, ob schon ein Ergebnis existiert
+    existing = conn.execute(
+        'SELECT id FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
+        (retry_id, student_id)
+    ).fetchone()
+
+    if existing:
+        conn.close()
+        return {"message": "Already submitted"}, 200
+
+    # Hole die Fragen für diesen Retry
+    questions = conn.execute(
+        'SELECT question, options, correct_answer, explanation FROM HomeworkRetryQuestions WHERE retry_id = ?',
+        (retry_id,)
+    ).fetchall()
+
+    questions_for_gpt = []
+    for idx, q in enumerate(questions):
+        options = json.loads(q['options'])
+        questions_for_gpt.append({
+            "question": q['question'],
+            "options": options,
+            "correct_answer": q['correct_answer'],
+            "student_answer": selected_answers.get(str(idx)),
+            "explanation": q['explanation']
+        })
+
+    # Hole Kontextinfos
+    retry = conn.execute('SELECT homework_id FROM HomeworkRetries WHERE id = ?', (retry_id,)).fetchone()
+    homework_id = retry['homework_id']
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = (SELECT class_id FROM Homework WHERE id = ?)', (homework_id,)
+    ).fetchone()
+    subject = class_info['subject'] if class_info else ''
+    grade_level = class_info['grade_level'] if class_info else ''
+
+    # Prompt für KI
+    prompt = f"""
+You are an educational assistant. Please analyze the following multiple-choice retry homework results for a student.
+
+- Give a short, motivating summary of the student's performance.
+- Based on the number and type of mistakes, recommend a learning path: Should the student retry with more multiple-choice questions, switch to open questions, or review the material first?
+- Give concrete, actionable advice for improvement.
+- Formulate your answer as if you were the student's sidekick. Talk directly to them.
+- A answere is correct if correct_answer and student_answer are the same, for example "correct_answer": 0,"student_answer": 0,
+
+Homework info:
+- Subject: {subject}
+- Grade: {grade_level}
+
+Questions and answers:
+{json.dumps(questions_for_gpt, ensure_ascii=False, indent=2)}
+
+Please answer in JSON:
+{{
+  "summary": "...",
+  "recommendation": "..."
+}}
+"""
+    print("=== Prompt an ChatGPT ===")
+    print(prompt)
+    print("========================")
+    # KI-Call
+    api_key = os.getenv("CHATGPT_API_KEY")
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data_api = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data_api)
+        if response.status_code == 200:
+            result = response.json()
+            generated_content = result["choices"][0]["message"]["content"]
+            try:
+                json_start = generated_content.index('{')
+                json_end = generated_content.rindex('}')
+                json_content = generated_content[json_start:json_end + 1]
+                gpt_json = json.loads(json_content)
+                mc_feedback_summary = gpt_json.get("summary", "")
+                mc_feedback_recommendation = gpt_json.get("recommendation", "")
+            except Exception as e:
+                mc_feedback_summary = "No summary available."
+                mc_feedback_recommendation = ""
+        else:
+            mc_feedback_summary = "No summary available."
+            mc_feedback_recommendation = ""
+    except Exception as e:
+        mc_feedback_summary = "No summary available."
+        mc_feedback_recommendation = ""
+
+    date_submitted = datetime.now().isoformat()
+    conn.execute(
+        '''INSERT INTO HomeworkRetryResults
+           (retry_id, student_id, selected_answers, correct_count, incorrect_count, date_submitted, mc_feedback_summary, mc_feedback_recommendation)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+        (retry_id, student_id, json.dumps(selected_answers), correct_count, incorrect_count, date_submitted, mc_feedback_summary, mc_feedback_recommendation)
+    )
+
+    homework_id = retry['homework_id']
+    first_retry = conn.execute(
+        '''
+        SELECT id FROM HomeworkRetries
+        WHERE homework_id = ? AND student_id = ?
+        ORDER BY date_created ASC LIMIT 1
+        ''',
+        (homework_id, student_id)
+    ).fetchone()
+
+    conn.commit()
+    conn.close()
+
+    if first_retry and first_retry['id'] == retry_id:
+        add_points_and_check_level(student_id, correct_count * 1, allow_bonus=False)
+
+    return {
+        "message": "Retry submitted",
+        "mc_feedback_summary": mc_feedback_summary,
+        "mc_feedback_recommendation": mc_feedback_recommendation,
+        "correct_count": correct_count,
+        "incorrect_count": incorrect_count
+    }, 200
 
 @app.route('/check_retry_open_questions', methods=['POST'])
 def check_retry_open_questions():
@@ -1675,8 +1841,22 @@ def check_retry_open_questions():
         )
     )
 
+    homework_id = retry['homework_id']
+    first_retry = conn.execute(
+        '''
+        SELECT id FROM HomeworkRetries
+        WHERE homework_id = ? AND student_id = ?
+        ORDER BY date_created ASC LIMIT 1
+        ''',
+        (homework_id, student_id)
+    ).fetchone()
+
     conn.commit()
     conn.close()
+
+    if first_retry and first_retry['id'] == retry_id:
+        add_points_and_check_level(student_id, correct_count * 2, allow_bonus=False)
+
     gpt_json["correct_count"] = correct_count
     gpt_json["wrong_count"] = wrong_count
     return jsonify(gpt_json)
@@ -2027,130 +2207,87 @@ def retry_homework():
         conn.close()
         return jsonify({"error": "Unknown retry type"}), 400
 
-@app.route('/submit_retry_task', methods=['POST'])
-def submit_retry_task():
-    from datetime import datetime
+
+##### Gamification
+
+from datetime import datetime
+
+def add_points_and_check_level(student_id, points_to_add, allow_bonus=True):
     conn = get_db_connection()
-    data = request.get_json()
-    retry_id = data.get('retry_id')
-    student_id = data.get('student_id')
-    correct_count = int(data.get('correct_count'))
-    incorrect_count = int(data.get('incorrect_count'))
-    selected_answers = data.get('selected_answers', {})
+    today = datetime.now().strftime("%Y-%m-%d")
 
-    # Prüfe, ob schon ein Ergebnis existiert
-    existing = conn.execute(
-        'SELECT id FROM HomeworkRetryResults WHERE retry_id = ? AND student_id = ?',
-        (retry_id, student_id)
+    # Hole aktuellen Bonus für heute
+    bonus_row = conn.execute(
+        'SELECT bonus_left FROM DailyBonus WHERE student_id = ? AND date = ?',
+        (student_id, today)
     ).fetchone()
+    bonus_left = 30 if not bonus_row else bonus_row['bonus_left']
 
-    if existing:
-        conn.close()
-        return {"message": "Already submitted"}, 200
+    # Berechne, wie viele Punkte verdoppelt werden
+    if allow_bonus:
+        double_points = min(points_to_add, bonus_left)
+        normal_points = points_to_add - double_points
+        total_points = double_points * 2 + normal_points
+        bonus_left = max(0, bonus_left - points_to_add)
+    else:
+        double_points = 0
+        normal_points = points_to_add
+        total_points = points_to_add  # Kein Bonus bei Retry
 
-    # Hole die Fragen für diesen Retry
-    questions = conn.execute(
-        'SELECT question, options, correct_answer, explanation FROM HomeworkRetryQuestions WHERE retry_id = ?',
-        (retry_id,)
-    ).fetchall()
-
-    questions_for_gpt = []
-    for idx, q in enumerate(questions):
-        options = json.loads(q['options'])
-        questions_for_gpt.append({
-            "question": q['question'],
-            "options": options,
-            "correct_answer": q['correct_answer'],
-            "student_answer": selected_answers.get(str(idx)),
-            "explanation": q['explanation']
-        })
-
-    # Hole Kontextinfos
-    retry = conn.execute('SELECT homework_id FROM HomeworkRetries WHERE id = ?', (retry_id,)).fetchone()
-    homework_id = retry['homework_id']
-    class_info = conn.execute(
-        'SELECT subject, grade_level FROM Classes WHERE id = (SELECT class_id FROM Homework WHERE id = ?)', (homework_id,)
-    ).fetchone()
-    subject = class_info['subject'] if class_info else ''
-    grade_level = class_info['grade_level'] if class_info else ''
-
-    # Prompt für KI
-    prompt = f"""
-You are an educational assistant. Please analyze the following multiple-choice retry homework results for a student.
-
-- Give a short, motivating summary of the student's performance.
-- Based on the number and type of mistakes, recommend a learning path: Should the student retry with more multiple-choice questions, switch to open questions, or review the material first?
-- Give concrete, actionable advice for improvement.
-- Formulate your answer as if you were the student's sidekick. Talk directly to them.
-- A answere is correct if correct_answer and student_answer are the same, for example "correct_answer": 0,"student_answer": 0,
-
-Homework info:
-- Subject: {subject}
-- Grade: {grade_level}
-
-Questions and answers:
-{json.dumps(questions_for_gpt, ensure_ascii=False, indent=2)}
-
-Please answer in JSON:
-{{
-  "summary": "...",
-  "recommendation": "..."
-}}
-"""
-    print("=== Prompt an ChatGPT ===")
-    print(prompt)
-    print("========================")
-    # KI-Call
-    api_key = os.getenv("CHATGPT_API_KEY")
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    data_api = {
-        "model": "gpt-4o",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=data_api)
-        if response.status_code == 200:
-            result = response.json()
-            generated_content = result["choices"][0]["message"]["content"]
-            try:
-                json_start = generated_content.index('{')
-                json_end = generated_content.rindex('}')
-                json_content = generated_content[json_start:json_end + 1]
-                gpt_json = json.loads(json_content)
-                mc_feedback_summary = gpt_json.get("summary", "")
-                mc_feedback_recommendation = gpt_json.get("recommendation", "")
-            except Exception as e:
-                mc_feedback_summary = "No summary available."
-                mc_feedback_recommendation = ""
+    # Update oder Insert Bonus
+    if allow_bonus:
+        if bonus_row:
+            conn.execute(
+                'UPDATE DailyBonus SET bonus_left = ? WHERE student_id = ? AND date = ?',
+                (bonus_left, student_id, today)
+            )
         else:
-            mc_feedback_summary = "No summary available."
-            mc_feedback_recommendation = ""
-    except Exception as e:
-        mc_feedback_summary = "No summary available."
-        mc_feedback_recommendation = ""
+            conn.execute(
+                'INSERT INTO DailyBonus (student_id, date, bonus_left) VALUES (?, ?, ?)',
+                (student_id, today, bonus_left)
+            )
 
-    date_submitted = datetime.now().isoformat()
-    conn.execute(
-        '''INSERT INTO HomeworkRetryResults
-           (retry_id, student_id, selected_answers, correct_count, incorrect_count, date_submitted, mc_feedback_summary, mc_feedback_recommendation)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-        (retry_id, student_id, json.dumps(selected_answers), correct_count, incorrect_count, date_submitted, mc_feedback_summary, mc_feedback_recommendation)
-    )
+    # Punkte und Level aktualisieren
+    student = conn.execute('SELECT points, level FROM Participants WHERE id = ?', (student_id,)).fetchone()
+    if not student:
+        conn.close()
+        return
+
+    points = student['points'] + total_points
+    level = student['level']
+
+    thresholds = []
+    needed = 25
+    total = 0
+    for _ in range(1, 30):
+        total += needed
+        thresholds.append(total)
+        needed *= 2
+
+    new_level = 1
+    for threshold in thresholds:
+        if points >= threshold:
+            new_level += 1
+        else:
+            break
+
+    conn.execute('UPDATE Participants SET points = ?, level = ? WHERE id = ?', (points, new_level, student_id))
     conn.commit()
     conn.close()
-    return {
-        "message": "Retry submitted",
-        "mc_feedback_summary": mc_feedback_summary,
-        "mc_feedback_recommendation": mc_feedback_recommendation,
-        "correct_count": correct_count,
-        "incorrect_count": incorrect_count
-    }, 200
+
+@app.route('/get_daily_bonus')
+def get_daily_bonus():
+    student_id = request.args.get('student_id', type=int)
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db_connection()
+    row = conn.execute(
+        'SELECT bonus_left FROM DailyBonus WHERE student_id = ? AND date = ?',
+        (student_id, today)
+    ).fetchone()
+    conn.close()
+    bonus_left = row['bonus_left'] if row else 30
+    return jsonify({"bonus_left": bonus_left})
 
 
 

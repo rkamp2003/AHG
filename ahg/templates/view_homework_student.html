@@ -139,6 +139,16 @@
     </div>
 
 
+    <!-- Success-Modal -->
+    <div id="success-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:2000;">
+      <div style="background:#fff; padding:28px 28px 20px 28px; border-radius:14px; max-width:440px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center;">
+        <h3 style="margin-top:0; margin-bottom:18px; text-align:center; font-size:1.5em;">Homework Submitted!</h3>
+        <div id="success-modal-content" style="font-size:1.1em; margin-bottom:18px; text-align:center;"></div>
+        <button onclick="closeSuccessModal()" class="button" style="min-width:120px;">OK</button>
+      </div>
+    </div>
+
+
     <!-- Retry-Tasks-Liste oben rechts -->
     <div class="retry-tasks-fixed">
         <h4 style="margin-top:0;">Your Retry Tasks</h4>
@@ -181,6 +191,23 @@
         
         function closeRetryModal() {
             document.getElementById('retry-modal').style.display = 'none';
+        }
+
+        function showSuccessModal(data, results, bonusText) {
+            const content = `
+                <div style="margin-bottom:10px;">${data.message}</div>
+                <div><b>Correct Answers:</b> ${results.correctCount}</div>
+                <div><b>New Class Skill Level:</b> ${data.class_skill_level}</div>
+                <div><b>New Overall Skill Level:</b> ${data.overall_skill_level}</div>
+                ${bonusText}
+            `;
+            document.getElementById('success-modal-content').innerHTML = content;
+            document.getElementById('success-modal').style.display = 'flex';
+        }
+
+        function closeSuccessModal() {
+            document.getElementById('success-modal').style.display = 'none';
+            window.location.reload();
         }
 
         function checkAnswers() {
@@ -252,14 +279,29 @@
             .then(response => response.json())
             .then(data => {
                 if (data.message) {
-                    const message = `
-                        ${data.message}
-                        Correct Answers: ${results.correctCount}
-                        New Class Skill Level: ${data.class_skill_level}
-                        New Overall Skill Level: ${data.overall_skill_level}
-                    `;
-                    alert(message);
-                    window.location.reload();
+                    // Punkte und Bonuspunkte berechnen
+                    let basePoints = results.correctCount * 2;
+                    let bonusText = "";
+                    // Hole aktuelle Punkte und Bonus aus dem Backend, falls du sie zurückgibst
+                    // Alternativ: Berechne Bonus wie im Backend
+                    fetch('/get_daily_bonus?student_id={{ student_id }}')
+                        .then(resp => resp.json())
+                        .then(bonusData => {
+                            let bonusLeft = bonusData.bonus_left ?? 0;
+                            let doublePoints = Math.min(basePoints, bonusLeft);
+                            let normalPoints = basePoints - doublePoints;
+                            let totalPoints = doublePoints * 2 + normalPoints;
+                            if (doublePoints > 0) {
+                                bonusText = `<br><b>Points:</b> ${basePoints} <span style="color:#4ad991;font-weight:bold;">×2 Daily Bonus</span> = <b>${totalPoints}</b>`;
+                            } else {
+                                bonusText = `<br><b>Points:</b> <b>${basePoints}</b>`;
+                            }
+                            showSuccessModal(data, results, bonusText);
+                        })
+                        .catch(() => {
+                            // Fallback falls Bonus nicht geladen werden kann
+                            showSuccessModal(data, results, `<br><b>Points:</b> <b>${basePoints}</b>`);
+                        });
                 } else {
                     alert('Error submitting homework.');
                 }
@@ -472,18 +514,46 @@ document.getElementById('check-openq-btn')?.addEventListener('click', async func
         document.getElementById('sample_solution_{{ oq["id"] }}').style.display = 'block';
     {% endfor %}
     // Gesamtfeedback anzeigen
-    document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary +
+    // Gesamtfeedback anzeigen
+document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary +
     "<br><b>Recommendation:</b> " + data.recommendation;
-        // Zusätzlich: Alert mit Skill-Level (wie bei MC)
-    const message = `
-Open Questions checked!
-Correct Answers: ${data.correct_count}
-Incorrect Answers: ${data.wrong_count}
-New Class Skill Level: ${data.class_skill_level}
-    `;
-    alert(message);
 
-    setTimeout(() => window.location.reload(), 1000);
+// Punkte und Bonuspunkte berechnen (analog zu MC)
+let basePoints = data.correct_count * 4;
+let bonusText = "";
+fetch('/get_daily_bonus?student_id={{ student_id }}')
+    .then(resp => resp.json())
+    .then(bonusData => {
+        let bonusLeft = bonusData.bonus_left ?? 0;
+        let doublePoints = Math.min(basePoints, bonusLeft);
+        let normalPoints = basePoints - doublePoints;
+        let totalPoints = doublePoints * 2 + normalPoints;
+        if (doublePoints > 0) {
+            bonusText = `<br><b>Points:</b> ${basePoints} <span style="color:#4ad991;font-weight:bold;">×2 Daily Bonus</span> = <b>${totalPoints}</b>`;
+        } else {
+            bonusText = `<br><b>Points:</b> <b>${basePoints}</b>`;
+        }
+        showSuccessModal(
+            {
+                message: "Open Questions checked!",
+                class_skill_level: data.class_skill_level,
+                overall_skill_level: null // oder falls du das berechnest: data.overall_skill_level
+            },
+            { correctCount: data.correct_count },
+            bonusText
+        );
+    })
+    .catch(() => {
+        showSuccessModal(
+            {
+                message: "Open Questions checked!",
+                class_skill_level: data.class_skill_level,
+                overall_skill_level: null
+            },
+            { correctCount: data.correct_count },
+            `<br><b>Points:</b> <b>${basePoints}</b>`
+        );
+    });
 });
     </script>
 </body>
