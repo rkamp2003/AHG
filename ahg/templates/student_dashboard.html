@@ -55,6 +55,102 @@
         {% endfor %}
     </ul>
 
+    <h3 style="text-align:center;margin-top:36px;margin-bottom:18px;">Badges Progress</h3>
+    <div style="max-width:600px;margin:0 auto 32px auto;">
+        {% for badge in badge_progress %}
+            {% if badge.achieved or badge.is_next %}
+                <div style="margin-bottom:18px;padding:16px 22px;border-radius:14px;box-shadow:0 1px 8px #e0e0e0;background:
+                    {% if badge.achieved %}#e6ffe6
+                    {% elif badge.is_next %}#f0f7ff
+                    {% else %}#f7f7f7{% endif %};
+                    opacity:{{ badge.achieved or badge.is_next and 1 or 0.6 }};">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div>
+                            <span style="font-size:2.2em;vertical-align:middle;">
+                                {% if badge.icon_url %}
+                                    <img src="{{ badge.icon_url }}" alt="Badge" style="height:56px;width:56px;object-fit:contain;vertical-align:middle;">
+                                {% else %}
+                                    <!-- Fallback Emoji falls kein Bild -->
+                                    {% if badge.category == 'level' %}🏅{% elif badge.category == 'homework' %}📚{% elif badge.category == 'retry' %}🔄{% elif badge.category == 'team' %}🤝{% endif %}
+                                {% endif %}
+                            </span>
+                            <b style="margin-left:10px;">{{ badge.name }}</b>
+                            <span style="font-size:0.97em;color:#888;">({{ badge.category|capitalize }})</span>
+                        </div>
+                        {% if badge.achieved %}
+                            <span style="color:green;font-weight:bold;">✔️ Achieved</span>
+                        {% elif badge.is_next %}
+                            <button class="show-locked-btn" data-cat="{{ badge.category }}" style="background:#e3eaff;border:none;color:#1976d2;cursor:pointer;font-weight:bold;padding:7px 20px;border-radius:50px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px #e0eaff;transition:background 0.2s;">
+                                <span class="btn-text">Show next badges</span>
+                                <span class="btn-icon" style="font-size:1.1em;">▼</span>
+                            </button>
+                        {% endif %}
+                    </div>
+                    <div style="font-size:1em;color:#444;margin:6px 0 12px 0;">{{ badge.description }}</div>
+                    {% if badge.is_next and not badge.achieved %}
+                        <div style="background:#ddd;border-radius:8px;overflow:hidden;height:20px;margin-bottom:6px;">
+                            <div style="background:linear-gradient(90deg,#4fc3f7,#1976d2);height:100%;width:{{ (badge.current/badge.threshold*100) if badge.threshold > 0 and badge.current < badge.threshold else 100 }}%;transition:width 0.5s;"></div>
+                        </div>
+                        <div style="font-size:0.97em;color:#333;">
+                            {{ badge.current }} / {{ badge.threshold }} {{ badge.category == 'level' and 'Level' or 'Tasks' }}
+                            ({{ badge.threshold - badge.current if badge.current < badge.threshold else 0 }} to go)
+                        </div>
+                    {% elif badge.achieved %}
+                        <div style="font-size:0.97em;color:green;"><b>Completed!</b></div>
+                    {% endif %}
+                </div>
+            {% endif %}
+            {% if badge.is_next %}
+                <div class="locked-badges" id="locked-{{ badge.category }}" style="display:none;transition:max-height 0.4s cubic-bezier(.4,0,.2,1);overflow:hidden;">
+                    {% for locked in badge_progress %}
+                        {% if locked.category == badge.category and not locked.achieved and not locked.is_next %}
+                            <div style="margin-bottom:10px;padding:10px 16px;border-radius:10px;background:#f7f7f7;opacity:0.6;">
+                                <span style="font-size:1.2em;vertical-align:middle;">
+                                    {% if locked.icon_url %}
+                                        <img src="{{ locked.icon_url }}" alt="Badge" style="height:40px;width:40px;object-fit:contain;vertical-align:middle;">
+                                    {% else %}
+                                        {% if locked.category == 'level' %}🏅{% elif locked.category == 'homework' %}📚{% elif locked.category == 'retry' %}🔄{% elif locked.category == 'team' %}🤝{% endif %}
+                                    {% endif %}
+                                </span>
+                                <b style="margin-left:8px;">{{ locked.name }}</b>
+                                <span style="font-size:0.95em;color:#888;">({{ locked.category|capitalize }})</span>
+                                <span style="color:#aaa;font-weight:bold;margin-left:10px;">🔒 Locked</span>
+                                <div style="font-size:0.97em;color:#444;margin:2px 0 0 0;">{{ locked.description }}</div>
+                                <div style="font-size:0.93em;color:#333;">
+                                    Needs {{ locked.threshold }} {{ locked.category == 'level' and 'Level' or 'Tasks' }}
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    <script>
+    document.querySelectorAll('.show-locked-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const cat = btn.getAttribute('data-cat');
+            const lockedDiv = document.getElementById('locked-' + cat);
+            const btnText = btn.querySelector('.btn-text');
+            const btnIcon = btn.querySelector('.btn-icon');
+            if (lockedDiv.style.display === 'none' || lockedDiv.style.display === '') {
+                lockedDiv.style.display = 'block';
+                lockedDiv.style.maxHeight = lockedDiv.scrollHeight + "px";
+                btnText.textContent = "Hide next badges";
+                btnIcon.textContent = "▲";
+                btn.style.background = "#dbeafe";
+            } else {
+                lockedDiv.style.maxHeight = "0";
+                setTimeout(() => { lockedDiv.style.display = 'none'; }, 400);
+                btnText.textContent = "Show next badges";
+                btnIcon.textContent = "▼";
+                btn.style.background = "#e3eaff";
+            }
+        });
+    });
+    </script>
+
     <h3>Overall Skill Level Progress</h3>
     <div class="chart-container" style="max-width: 800px;">
         <canvas id="totalSkillChart"></canvas>
@@ -164,5 +260,51 @@
             return classId !== '';
         }
     </script>
+
+    {% if new_badges %}
+    <script>
+    window.addEventListener('DOMContentLoaded', function() {
+        let html = `<h3>🎉 New Badge{{ new_badges|length > 1 and 's' or '' }} Unlocked!</h3>`;
+        {% for badge in new_badges %}
+            html += `<div style="margin:12px 0;">
+                <b>{{ badge.name }}</b><br>
+                <span style="font-size:0.95em;">{{ badge.description }}</span>
+            </div>`;
+        {% endfor %}
+        showBadgeModal(html);
+        function showBadgeModal(content) {
+            let modal = document.createElement('div');
+            modal.style = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;";
+            modal.innerHTML = `<div style="background:#fff;padding:32px 32px 20px 32px;border-radius:14px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.18);text-align:center;">
+                ${content}
+                <br><button onclick="this.parentNode.parentNode.remove()" style="margin-top:18px;min-width:100px;">OK</button>
+            </div>`;
+            document.body.appendChild(modal);
+        }
+    });
+    </script>
+    {% endif %}
+
+    {% if level_up %}
+<script>
+window.addEventListener('DOMContentLoaded', function() {
+    let html = `<h3>🎉 Level Up!</h3>
+        <div style="margin:12px 0;">
+            <b>Congratulations!</b><br>
+            You have reached <span style="color:#1976d2;font-weight:bold;">Level {{ level_up }}</span>!
+        </div>`;
+    showLevelUpModal(html);
+    function showLevelUpModal(content) {
+        let modal = document.createElement('div');
+        modal.style = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;";
+        modal.innerHTML = `<div style="background:#fff;padding:32px 32px 20px 32px;border-radius:14px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.18);text-align:center;">
+            ${content}
+            <br><button onclick="this.parentNode.parentNode.remove()" style="margin-top:18px;min-width:100px;">OK</button>
+        </div>`;
+        document.body.appendChild(modal);
+    }
+});
+</script>
+{% endif %}
 </body>
 </html>

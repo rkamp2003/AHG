@@ -23,13 +23,13 @@
         <li>
             <div style="margin-top:8px;">
                 <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:1.05em; margin-bottom:2px;">
-                    Task Completion
+                    Homework Completion
                 </div>
-                <div style="display: flex; background: #eee; border-radius: 8px; overflow: hidden; height: 22px; box-shadow: 0 1px 2px #ccc; margin-bottom: 6px; max-width: 600px; margin-left:auto; margin-right:auto;">
+                <div style="display: flex; background: linear-gradient(90deg, #4fc3f7, #1976d2); border-radius: 8px; overflow: hidden; height: 22px; box-shadow: 0 1px 2px #ccc; margin-bottom: 6px; max-width: 600px; margin-left:auto; margin-right:auto;">
                     {% for i in range(total_homework) %}
                         <div style="
                             flex: 1;
-                            background: {% if i < completed_homework %}linear-gradient(90deg, #4fc3f7, #1976d2){% else %}#d3d3d3{% endif %};
+                            background: {% if i < completed_homework %}transparent{% else %}#d3d3d3{% endif %};
                             height: 100%;
                             border-right: {% if not loop.last %}1px solid #fff{% else %}none{% endif %};
                             display: flex;
@@ -38,7 +38,7 @@
                             color: #fff;
                             font-weight: bold;
                             font-size: 0.95em;
-                            ">
+                        ">
                             {% if total_homework <= 10 %}{{ i+1 }}{% endif %}
                         </div>
                     {% endfor %}

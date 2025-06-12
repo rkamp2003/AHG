@@ -10,7 +10,7 @@
         <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Back to Class</a>
     </div>
 
-    {% if goal_score is defined and current_score is defined %}
+    {% if goal_score is defined and current_score is defined and goal_score is not none and current_score is not none %}
     <div style="max-width: 500px; margin: 32px auto 24px auto; padding: 18px 24px; background: #f7f7ff; border-radius: 12px; box-shadow: 0 2px 8px rgba(80,80,160,0.07);">
         <div style="font-weight: bold; color: #4a4a8e; margin-bottom: 8px; text-align:center;">
             Team Challenge Progress
@@ -31,7 +31,6 @@
                 padding-right: 0;
                 min-width: 0;
             ">
-                <!-- Keine Punkteanzeige im Balken -->
             </div>
         </div>
         <div style="text-align:center; color:#4a4a8e; font-size:0.98em;">

@@ -17,6 +17,23 @@
             <button type="submit" class="submit-button danger no-background">Delete Homework</button>
         </form>
     </div>
+
+    <div style="max-width:600px;margin:32px auto 24px auto;padding:20px 28px;background:#f5faff;border-radius:14px;box-shadow:0 2px 12px rgba(80,120,200,0.09);text-align:center;">
+        <div style="font-size:1.15em;margin-bottom:6px;">
+            <b>{{ num_done }}</b> out of <b>{{ total_students }}</b> students have completed this homework.
+        </div>
+        <div style="font-size:1em;color:#444;">
+            <span style="display:inline-block;margin:0 10px;">
+                <b>Level 1–3:</b> {{ done_skill_1 }} / {{ total_skill_1 }}
+            </span>
+            <span style="display:inline-block;margin:0 10px;">
+                <b>Level 4–7:</b> {{ done_skill_4 }} / {{ total_skill_4 }}
+            </span>
+            <span style="display:inline-block;margin:0 10px;">
+                <b>Level 8–10:</b> {{ done_skill_8 }} / {{ total_skill_8 }}
+            </span>
+        </div>
+    </div>
     
 
     {% if questions and questions|length > 0 %}
@@ -26,12 +43,22 @@
             <br>
             <ol>
                 {% for question in questions %}
-                    <li>
-                        <p>
+                    <li style="margin-bottom:22px;">
+                        <div>
                             <strong>{{ question['question'] }}</strong>
                             <br>
-                            <em>({{ question['taxonomy'] }} - skill_level: {{ question['skill_level'] }})</em>
-                        </p>
+                            <em>({{ question['taxonomy'] }} - 
+                                {% if question['skill_level'] == 1 %}
+                                    Skill Level 1 – 3
+                                {% elif question['skill_level'] == 4 %}
+                                    Skill Level 4 – 7
+                                {% elif question['skill_level'] == 8 %}
+                                    Skill Level 8 – 10
+                                {% else %}
+                                    {{ question['skill_level'] }}
+                                {% endif %}
+                            )</em>
+                        </div>
                         <ul>
                             {% for option in question['options'] %}
                                 <li>
@@ -43,31 +70,65 @@
                             {% endfor %}
                         </ul>
                         <span id="result_{{ question.index }}"></span>
+                        <!-- STATISTIKEN DIREKT UNTER DER FRAGE -->
+                        {% for stat in question_stats %}
+                            {% if stat.question_id == question['id'] %}
+                                <div style="font-size:0.95em;color:#555;margin:6px 0 0 0;">
+                                    {{ stat.answered }} answered |
+                                    <span style="color:green;">{{ stat.percent_correct }}% correct</span> /
+                                    <span style="color:red;">{{ stat.percent_wrong }}% wrong</span>
+                                </div>
+                            {% endif %}
+                        {% endfor %}
                     </li>
                 {% endfor %}
             </ol>
             <button type="button" onclick="checkAnswers()">Check</button>
         </form>
     {% elif open_questions and open_questions|length > 0 %}
-        <div class="openq-form" style="background-color:#fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); max-width: 500px; margin: 32px auto;">
-            <h2 style="margin-top:0;">Open Questions</h2>
-            <ol>
+        <div class="openq-form" style="background-color:#fff; padding: 32px 24px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.08); max-width: 600px; margin: 36px auto;">
+            <h2 style="margin-top:0; text-align:center;">Open Questions</h2>
+            <div>
                 {% for oq in open_questions %}
-                    <li style="margin-bottom:22px;">
-                        <div>
-                            <strong>{{ oq['question'] }}</strong>
+                    <div style="margin-bottom:32px; text-align:center;">
+                        <div style="margin-bottom:8px;">
+                            <span style="font-size:1.08em; font-weight:bold;">
+                                {{ loop.index }}. {{ oq['question'] }}
+                            </span>
                             <br>
-                            <em>({{ oq['taxonomy'] }} - skill_level: {{ oq['skill_level'] }})</em>
+                            <span style="font-size:0.98em; color:#666;">
+                                <em>({{ oq['taxonomy'] }} -
+                                    {% if oq['skill_level'] == 1 %}
+                                        Skill Level 1 – 3
+                                    {% elif oq['skill_level'] == 4 %}
+                                        Skill Level 4 – 7
+                                    {% elif oq['skill_level'] == 8 %}
+                                        Skill Level 8 – 10
+                                    {% else %}
+                                        {{ oq['skill_level'] }}
+                                    {% endif %}
+                                )</em>
+                            </span>
                         </div>
-                        <details style="margin-top:8px;">
+                        <details style="margin:10px auto 0 auto; display:inline-block; text-align:left;">
                             <summary style="cursor:pointer;">Show Sample Solution</summary>
                             <div style="margin-top:6px; color:#444;">
                                 {{ oq['sample_solution'] }}
                             </div>
                         </details>
-                    </li>
+                        <!-- STATISTIKEN DIREKT UNTER DER FRAGE -->
+                        {% for stat in question_stats %}
+                            {% if stat.question_id == oq['id'] %}
+                                <div style="font-size:0.95em;color:#555;margin:10px 0 0 0;">
+                                    {{ stat.answered }} answered |
+                                    <span style="color:green;">{{ stat.percent_correct }}% correct</span> /
+                                    <span style="color:red;">{{ stat.percent_wrong }}% wrong</span>
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
                 {% endfor %}
-            </ol>
+            </div>
         </div>
     {% endif %}
 

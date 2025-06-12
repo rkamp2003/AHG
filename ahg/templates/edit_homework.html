@@ -21,7 +21,16 @@
             <fieldset>
                 <legend>Question {{ loop.index }}</legend>
                 <div style="margin-bottom:6px; color:#555;">
-                    <strong>Skill Level:</strong> {{ question['skill_level'] }}
+                    <strong>Skill Level:</strong>
+                    {% if question['skill_level'] == 1 %}
+                        1–3
+                    {% elif question['skill_level'] == 4 %}
+                        4–7
+                    {% elif question['skill_level'] == 8 %}
+                        8–10
+                    {% else %}
+                        {{ question['skill_level'] }}
+                    {% endif %}
                 </div>
                 <input type="hidden" name="question_ids" value="{{ question['id'] }}">
                 
@@ -54,7 +63,16 @@
                 <fieldset>
                     <legend>Open Question {{ loop.index }}</legend>
                     <div style="margin-bottom:6px; color:#555;">
-                        <strong>Skill Level:</strong> {{ oq['skill_level'] }}
+                        <strong>Skill Level:</strong>
+                        {% if oq['skill_level'] == 1 %}
+                            1–3
+                        {% elif oq['skill_level'] == 4 %}
+                            4–7
+                        {% elif oq['skill_level'] == 8 %}
+                            8–10
+                        {% else %}
+                            {{ oq['skill_level'] }}
+                        {% endif %}
                     </div>
                     <input type="hidden" name="open_question_ids" value="{{ oq['id'] }}">
                     <label>Question:</label>

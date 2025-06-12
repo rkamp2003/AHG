@@ -415,3 +415,9 @@ textarea#description {
 .homework-item:hover {
     box-shadow: 0 4px 16px rgba(80,80,120,0.13);
 }
+
+.locked-badges {
+    max-height: 0;
+    transition: max-height 0.4s cubic-bezier(.4,0,.2,1);
+    overflow: hidden;
+}

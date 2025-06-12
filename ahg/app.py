@@ -133,7 +133,7 @@ def class_details_teacher(class_id, teacher_id):
     # Abrufen der Homework-Listen für die spezifische Klasse
     homework_list = conn.execute(
         '''
-        SELECT Homework.id, Homework.title, Homework.date_created,
+        SELECT Homework.id, Homework.title, Homework.date_created, Homework.status,
             CASE 
                 WHEN EXISTS (
                     SELECT 1 FROM HomeworkResults
@@ -145,9 +145,9 @@ def class_details_teacher(class_id, teacher_id):
                 )
                 THEN 'Done'
                 ELSE 'Open'
-            END AS status
+            END AS done_status
         FROM Homework
-        WHERE Homework.class_id = ? AND Homework.status = 'published' AND Homework.is_team_challenge = 0
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 0
         ''', (class_id,)
     ).fetchall()
 
@@ -436,6 +436,69 @@ def student_dashboard():
     all_classes = conn.execute('SELECT id, class_name FROM Classes').fetchall()
     all_classes_dict = [{'id': int(class_['id']), 'class_name': class_['class_name']} for class_ in all_classes]
 
+
+    all_badges = conn.execute('SELECT * FROM Badges').fetchall()
+    user_badge_ids = set([
+        row['badge_id'] for row in conn.execute('SELECT badge_id FROM UserBadges WHERE user_id = ?', (student_id,))
+    ])
+
+    level = student['level']
+    hw_count = conn.execute('SELECT COUNT(*) FROM HomeworkResults WHERE student_id = ?', (student_id,)).fetchone()[0]
+    retry_count = conn.execute('SELECT COUNT(*) FROM HomeworkRetryResults WHERE student_id = ?', (student_id,)).fetchone()[0]
+    team_success_count = conn.execute('''
+        SELECT COUNT(*) FROM TeamChallenges
+        JOIN HomeworkResults ON HomeworkResults.homework_id = TeamChallenges.homework_id
+        WHERE HomeworkResults.student_id = ?
+        AND TeamChallenges.success = 'success'
+    ''', (student_id,)).fetchone()[0]
+
+    # Gruppiere Badges nach Kategorie
+    from collections import defaultdict
+    badges_by_cat = defaultdict(list)
+    for badge in all_badges:
+        badges_by_cat[badge['category']].append(badge)
+
+    badge_progress = []
+    for cat, badges in badges_by_cat.items():
+        # Sortiere nach Threshold
+        badges = sorted(badges, key=lambda b: b['threshold'])
+        # Bestimme aktuellen Wert
+        if cat == 'level':
+            current = level
+        elif cat == 'homework':
+            current = hw_count
+        elif cat == 'retry':
+            current = retry_count
+        elif cat == 'team':
+            current = team_success_count
+        else:
+            current = 0
+        # Finde den nächsten noch nicht erreichten Badge
+        next_badge = None
+        for badge in badges:
+            achieved = badge['id'] in user_badge_ids
+            badge_progress.append({
+                "id": badge['id'],
+                "name": badge['name'],
+                "description": badge['description'],
+                "category": badge['category'],
+                "threshold": badge['threshold'],
+                "current": current,
+                "achieved": achieved,
+                "is_next": False,
+                "icon_url": badge['icon_url'] if 'icon_url' in badge.keys() else ''
+            })
+        # Markiere nur den nächsten noch nicht erreichten Badge für Fortschritt
+        for badge in badges:
+            if badge['id'] not in user_badge_ids:
+                for b in badge_progress:
+                    if b['id'] == badge['id']:
+                        b['is_next'] = True
+                break
+
+    level_up = session.pop('level_up', None)
+    new_badges = session.pop('new_badges', None)
+
     conn.close()
 
     return render_template(
@@ -446,7 +509,10 @@ def student_dashboard():
         skill_levels=skill_levels,
         titles=titles,
         class_names=class_names,
-        all_classes=all_classes_dict
+        all_classes=all_classes_dict,
+        badge_progress=badge_progress,
+        new_badges=new_badges,
+        level_up=level_up
     )
 
 
@@ -561,6 +627,14 @@ def class_details_student(class_id, student_id):
         ''',
         (student_id, student_id, class_id)
     ).fetchall()
+
+    conn = get_db_connection()
+    badges = conn.execute('''
+        SELECT Badges.name, Badges.description, Badges.category, Badges.threshold, UserBadges.awarded_at
+        FROM UserBadges
+        JOIN Badges ON UserBadges.badge_id = Badges.id
+        WHERE UserBadges.user_id = ?
+    ''', (student_id,)).fetchall()
 
     # Progress calculation
     total_homework = len(homework_list) + len(team_challenges)
@@ -989,16 +1063,40 @@ def view_homework_student(homework_id, student_id):
             except Exception:
                 selected_answers = {}
 
-    # Abrufen des Skill-Levels des Schülers
+    # Hausaufgabe abrufen
+    homework = conn.execute(
+        'SELECT id, title, description, date_created, class_id FROM Homework WHERE id = ?',
+        (homework_id,)
+    ).fetchone()
+
+    # Hole die class_id der aktuellen Hausaufgabe
+    class_id = homework['class_id']
+
+    # Hole den Skill-Level für diese Klasse
     student = conn.execute(
-        'SELECT class_skill_level FROM ClassMembers WHERE student_id = ?', (student_id,)
+        'SELECT class_skill_level FROM ClassMembers WHERE student_id = ? AND class_id = ?',
+        (student_id, class_id)
     ).fetchone()
     student_skill_level = student['class_skill_level'] if student else 0
 
     # Nach dem Abrufen von student_skill_level
     class_skill_level = student_skill_level if student_skill_level else None
 
-    # Skill-Level-Bereich definieren
+    print(f"Student Skill Level: {student_skill_level}")
+
+    # Wenn Hausaufgabe schon bearbeitet wurde, nimm das gespeicherte Skill-Level
+    answered_skill_level = None
+    if homework_status and homework_status['status'] == "Done":
+        result = conn.execute(
+            'SELECT answered_skill_level FROM HomeworkResults WHERE homework_id = ? AND student_id = ? ORDER BY date_submitted DESC LIMIT 1',
+            (homework_id, student_id)
+        ).fetchone()
+        if result is not None and result['answered_skill_level'] is not None:
+            answered_skill_level = result['answered_skill_level']
+
+    if answered_skill_level is not None:
+        student_skill_level = answered_skill_level
+
     if student_skill_level <= 3:
         skill_level = 1
     elif student_skill_level <= 7:
@@ -1006,11 +1104,7 @@ def view_homework_student(homework_id, student_id):
     else:
         skill_level = 8
 
-    # Hausaufgabe abrufen
-    homework = conn.execute(
-        'SELECT id, title, description, date_created, class_id FROM Homework WHERE id = ?',
-        (homework_id,)
-    ).fetchone()
+    print(f"Skill Level: {skill_level}")
 
     # Open Questions für das Skill Level laden
     open_questions = conn.execute(
@@ -1090,6 +1184,9 @@ def view_homework_student(homework_id, student_id):
     for row in openq_answers_rows:
         openq_answers[str(row['open_question_id'])] = row['answer']
     conn.close()
+
+    print("Loaded questions:", len(questions), "Skill Level:", skill_level)
+
     return render_template(
         'view_homework_student.html',
         homework=homework,
@@ -1204,19 +1301,18 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
     import json
     conn = get_db_connection()
 
-    # Abrufen der Hausaufgabendetails
+    # Hausaufgabendetails
     homework = conn.execute(
         'SELECT id, title, description, date_created FROM Homework WHERE id = ?',
         (homework_id,)
     ).fetchone()
-
     if not homework:
         conn.close()
-        return "Fehler: Hausaufgabe nicht gefunden", 404
+        return "Error: Homework not found", 404
 
-    # Abrufen aller Fragen ohne Berücksichtigung des Skill-Levels
+    # Fragen laden
     question_data = conn.execute(
-        'SELECT question, correct_answer, explanation, options, taxonomy, skill_level FROM HomeworkQuestions WHERE homework_id = ?',
+        'SELECT id, question, correct_answer, explanation, options, taxonomy, skill_level FROM HomeworkQuestions WHERE homework_id = ?',
         (homework_id,)
     ).fetchall()
 
@@ -1224,18 +1320,155 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
     correct_answers = {}
     explanations = {}
 
+    # Gruppiere Fragen nach Skill-Level für Index-Berechnung
+    questions_by_skill = {1: [], 4: [], 8: []}
+    for row in question_data:
+        questions_by_skill[row['skill_level']].append(row)
+
+    # Baue Fragenliste für das Template
     for idx, row in enumerate(question_data):
         question = dict(row)
         question['options'] = [{'index': i, 'option': opt} for i, opt in enumerate(json.loads(question['options']))]
+        question['id'] = row['id']
         questions.append({'index': idx, **question})
-        correct_answers[idx] = int(question['correct_answer'])  # Sicherstellen, dass die Antwort als Nummer vorliegt
+        correct_answers[idx] = int(question['correct_answer'])
         explanations[idx] = question['explanation']
 
-    # Open Questions abrufen
     open_questions = conn.execute(
-        'SELECT question, sample_solution, taxonomy, skill_level FROM HomeworkOpenQuestions WHERE homework_id = ?',
+        'SELECT id, question, sample_solution, taxonomy, skill_level FROM HomeworkOpenQuestions WHERE homework_id = ?',
         (homework_id,)
     ).fetchall()
+
+    # Alle Ergebnisse mit answered_skill_level laden
+    results = conn.execute(
+        'SELECT student_id, answered_skill_level FROM HomeworkResults WHERE homework_id = ?', (homework_id,)
+    ).fetchall()
+
+    # Skill-Gruppen-Zählung nach answered_skill_level
+    done_skill_1 = len([r for r in results if r['answered_skill_level'] is not None and r['answered_skill_level'] <= 3])
+    done_skill_4 = len([r for r in results if r['answered_skill_level'] is not None and 4 <= r['answered_skill_level'] <= 7])
+    done_skill_8 = len([r for r in results if r['answered_skill_level'] is not None and r['answered_skill_level'] >= 8])
+    num_done = len(results)
+
+    # Alle Schüler der Klasse für Gesamtzahl pro Gruppe
+    students = conn.execute(
+        'SELECT id, class_skill_level FROM ClassMembers WHERE class_id = ?', (class_id,)
+    ).fetchall()
+    students_skill_1 = [s for s in students if s['class_skill_level'] is not None and s['class_skill_level'] <= 3]
+    students_skill_4 = [s for s in students if s['class_skill_level'] is not None and 4 <= s['class_skill_level'] <= 7]
+    students_skill_8 = [s for s in students if s['class_skill_level'] is not None and s['class_skill_level'] >= 8]
+
+    total_skill_1 = len(students_skill_1)
+    total_skill_4 = len(students_skill_4)
+    total_skill_8 = len(students_skill_8)
+
+    # Gruppiere Fragen nach Skill-Level für Index-Berechnung
+    questions_by_skill = {1: [], 4: [], 8: []}
+    for row in question_data:
+        questions_by_skill[row['skill_level']].append(row)
+    for k in questions_by_skill:
+        questions_by_skill[k].sort(key=lambda q: q['id'])
+
+    question_stats = []
+    for row in question_data:
+        q_id = row['id']
+        skill_level = row['skill_level']
+        group_questions = questions_by_skill[skill_level]
+        group_idx = group_questions.index(row)
+
+        # Zähle alle Ergebnisse, bei denen answered_skill_level zur Gruppe passt und selected_answers[group_idx] existiert
+        answered = 0
+        correct = 0
+        # Hole alle passenden Results
+        results = conn.execute(
+            'SELECT selected_answers FROM HomeworkResults WHERE homework_id = ? AND answered_skill_level >= ? AND answered_skill_level <= ?',
+            (
+                homework_id,
+                skill_level if skill_level == 8 else (1 if skill_level == 1 else 4),
+                skill_level if skill_level == 8 else (3 if skill_level == 1 else 7)
+            )
+        ).fetchall()
+        for res in results:
+            try:
+                answers = json.loads(res['selected_answers'])
+                # group_idx als string!
+                if str(group_idx) in answers:
+                    answered += 1
+                    # Hole die richtige Antwort aus der DB
+                    correct_answer = conn.execute(
+                        'SELECT correct_answer FROM HomeworkQuestions WHERE id = ?', (q_id,)
+                    ).fetchone()[0]
+                    if str(answers[str(group_idx)]) == str(correct_answer):
+                        correct += 1
+            except Exception as e:
+                pass
+
+        wrong = answered - correct
+        percent_correct = int((correct / answered) * 100) if answered > 0 else 0
+        percent_wrong = 100 - percent_correct if answered > 0 else 0
+        question_stats.append({
+            "question_id": q_id,
+            "answered": answered,
+            "correct": correct,
+            "wrong": wrong,
+            "percent_correct": percent_correct,
+            "percent_wrong": percent_wrong
+        })
+
+    openq_stats_rows = conn.execute(
+        'SELECT id, question, skill_level FROM HomeworkOpenQuestions WHERE homework_id = ?', (homework_id,)
+    ).fetchall()
+
+    # Gruppiere Open Questions nach Skill-Level und sortiere sie nach id
+    openq_by_skill = {1: [], 4: [], 8: []}
+    for row in openq_stats_rows:
+        openq_by_skill[row['skill_level']].append(row)
+    for k in openq_by_skill:
+        openq_by_skill[k].sort(key=lambda q: q['id'])
+
+    for row in openq_stats_rows:
+        oq_id = row['id']
+        skill_level = row['skill_level']
+        group_questions = openq_by_skill[skill_level]
+        group_idx = group_questions.index(row)
+
+        # Hole alle passenden Results für diese Skillgruppe
+        results = conn.execute(
+            'SELECT student_id, feedback_json FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND answered_skill_level >= ? AND answered_skill_level <= ?',
+            (
+                homework_id,
+                skill_level if skill_level == 8 else (1 if skill_level == 1 else 4),
+                skill_level if skill_level == 8 else (3 if skill_level == 1 else 7)
+            )
+        ).fetchall()
+
+        answered = 0
+        correct = 0
+        for res in results:
+            try:
+                feedback = json.loads(res['feedback_json'])
+                # Prüfe, ob der Schüler für diesen Index eine Antwort hat
+                # Die IDs der Fragen stimmen mit den Keys im feedback überein
+                if str(oq_id) in feedback:
+                    answered += 1
+                    if feedback[str(oq_id)].get("is_correct") is True:
+                        correct += 1
+            except Exception:
+                pass
+
+        wrong = answered - correct
+        percent_correct = int((correct / answered) * 100) if answered > 0 else 0
+        percent_wrong = 100 - percent_correct if answered > 0 else 0
+        question_stats.append({
+            "question_id": oq_id,
+            "answered": answered,
+            "correct": correct,
+            "wrong": wrong,
+            "percent_correct": percent_correct,
+            "percent_wrong": percent_wrong
+        })
+
+    print(f"OQID {oq_id} | Skill {skill_level} | GroupIdx {group_idx} | answered {answered} | correct {correct}")
 
     conn.close()
 
@@ -1247,7 +1480,16 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         teacher_id=teacher_id,
         correct_answers=correct_answers,
         explanations=explanations,
-        open_questions=open_questions
+        question_stats=question_stats,
+        open_questions=open_questions,
+        num_done=num_done,
+        total_students=total_skill_1 + total_skill_4 + total_skill_8,
+        done_skill_1=done_skill_1,
+        done_skill_4=done_skill_4,
+        done_skill_8=done_skill_8,
+        total_skill_1=total_skill_1,
+        total_skill_4=total_skill_4,
+        total_skill_8=total_skill_8,
     )
 
 
@@ -1297,6 +1539,8 @@ def submit_homework():
             ''',
             (student_id, homework_id)
         ).fetchone()['class_skill_level']
+
+        old_class_skill_level = class_skill_level
 
         # Neue Bewertung basierend auf der Leistung
         if correct_count > 7:
@@ -1362,13 +1606,14 @@ def submit_homework():
         subject = class_info['subject'] if class_info else ''
         grade_level = class_info['grade_level'] if class_info else ''
 
-        mc_prompt = f"""
+        prompt = f"""
 You are an educational assistant. Please analyze the following multiple-choice homework results for a student.
 
 - Give a short, motivating summary of the student's performance.
 - Based on the number and type of mistakes, recommend a learning path: Should the student retry with more multiple-choice questions, switch to open questions, or review the material first?
 - Give concrete, actionable advice for improvement.
 - Formulate your answer as if you were the student's sidekick. Talk directly to them.
+- A answere is correct if correct_answer and student_answer are the same, for example "correct_answer": 0,"student_answer": 0,
 
 Homework info:
 - Subject: {subject}
@@ -1384,6 +1629,10 @@ Please answer in JSON:
 }}
 """
 
+        print("=== Prompt an ChatGPT ===")
+        print(prompt)
+        print("========================")
+
         # KI-Call
         api_key = os.getenv("CHATGPT_API_KEY")
         url = "https://api.openai.com/v1/chat/completions"
@@ -1393,7 +1642,7 @@ Please answer in JSON:
         }
         data_api = {
             "model": "gpt-4o",
-            "messages": [{"role": "user", "content": mc_prompt}],
+            "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7
         }
 
@@ -1425,12 +1674,12 @@ Please answer in JSON:
             INSERT INTO HomeworkResults (homework_id, student_id, correct_count, 
                                          incorrect_count, date_submitted, 
                                          new_class_skill_level, new_skill_level, selected_answers,
-                                         mc_feedback_summary, mc_feedback_recommendation)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         mc_feedback_summary, mc_feedback_recommendation, answered_skill_level)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (homework_id, student_id, correct_count, incorrect_count, date_submitted,
              class_skill_level, avg_class_skill, json.dumps(selected_answers),
-             mc_feedback_summary, mc_feedback_recommendation)
+             mc_feedback_summary, mc_feedback_recommendation, old_class_skill_level)
         )
 
          # Team-Punkte gutschreiben, falls TeamChallenge
@@ -1444,7 +1693,7 @@ Please answer in JSON:
         add_points_and_check_level(student_id, correct_count * 2, allow_bonus=True)
         if team_challenge:
             add_points_to_team(homework_id, student_id, correct_count * 2, allow_bonus=True)
-
+        check_and_award_badges(student_id)
         # Erfolgsmeldung mit neuem Skill Level
         return jsonify({
             "message": "Results successfully saved",
@@ -1576,13 +1825,21 @@ def check_open_questions():
         else:
             wrong_count += 1
 
+    # Skill-Level-Logik
+    class_skill_level = conn.execute(
+        'SELECT class_skill_level FROM ClassMembers WHERE student_id = ? AND class_id = (SELECT class_id FROM Homework WHERE id = ?)',
+        (student_id, homework_id)
+    ).fetchone()
+    class_skill_level = class_skill_level['class_skill_level'] if class_skill_level else 5
+    old_class_skill_level = class_skill_level
+
     # Speichere das Ergebnis in der Datenbank (Upsert)
     conn.execute(
         '''
-        INSERT INTO HomeworkOpenQuestionsResults (homework_id, student_id, feedback_json, correct_count, wrong_count, summary, recommendation, date_submitted)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO HomeworkOpenQuestionsResults (homework_id, student_id, feedback_json, correct_count, wrong_count, summary, recommendation, date_submitted, answered_skill_level)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(homework_id, student_id)
-        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, recommendation=excluded.recommendation, date_submitted=excluded.date_submitted
+        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, recommendation=excluded.recommendation, date_submitted=excluded.date_submitted answered_skill_level=excluded.answered_skill_level
         ''',
         (
             homework_id,
@@ -1592,16 +1849,10 @@ def check_open_questions():
             wrong_count,
             gpt_json.get("summary", ""),
             gpt_json.get("recommendation", ""),
-            datetime.now().isoformat()
+            datetime.now().isoformat(),
+            old_class_skill_level
         )
     )
-
-        # Skill-Level-Logik
-    class_skill_level = conn.execute(
-        'SELECT class_skill_level FROM ClassMembers WHERE student_id = ? AND class_id = (SELECT class_id FROM Homework WHERE id = ?)',
-        (student_id, homework_id)
-    ).fetchone()
-    class_skill_level = class_skill_level['class_skill_level'] if class_skill_level else 5
 
     # Neue Skill-Berechnung
     if correct_count <= 2:
@@ -1649,7 +1900,7 @@ def check_open_questions():
     add_points_and_check_level(student_id, correct_count * 4, allow_bonus=True)
     if team_challenge:
         add_points_to_team(homework_id, student_id, correct_count * 4, allow_bonus=True)
-
+    check_and_award_badges(student_id)
     gpt_json["correct_count"] = correct_count
     gpt_json["wrong_count"] = wrong_count
     gpt_json["class_skill_level"] = new_class_skill_level
@@ -1793,6 +2044,7 @@ Please answer in JSON:
         add_points_and_check_level(student_id, correct_count * 1, allow_bonus=False)
         if team_challenge:
             add_points_to_team(homework_id, student_id, correct_count, allow_bonus=False)
+        check_and_award_badges(student_id)
         return {
             "message": "Retry submitted",
             "mc_feedback_summary": mc_feedback_summary,
@@ -1971,6 +2223,7 @@ def check_retry_open_questions():
         add_points_and_check_level(student_id, correct_count * 2, allow_bonus=False)
         if team_challenge:
             add_points_to_team(homework_id, student_id, correct_count * 2, allow_bonus=False)
+        check_and_award_badges(student_id)
         return jsonify({
             "message": "Retry submitted",
             "feedback": gpt_json.get("feedback", {}),
@@ -2338,8 +2591,6 @@ def retry_homework():
 
 ##### Gamification
 
-from datetime import datetime
-
 def add_points_and_check_level(student_id, points_to_add, allow_bonus=True):
     conn = get_db_connection()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -2382,7 +2633,7 @@ def add_points_and_check_level(student_id, points_to_add, allow_bonus=True):
         return
 
     points = student['points'] + total_points
-    level = student['level']
+    old_level = student['level']
 
     thresholds = []
     needed = 25
@@ -2398,6 +2649,10 @@ def add_points_and_check_level(student_id, points_to_add, allow_bonus=True):
             new_level += 1
         else:
             break
+
+    # Level-Up in Session speichern, falls gestiegen
+    if new_level > old_level:
+        session['level_up'] = new_level
 
     conn.execute('UPDATE Participants SET points = ?, level = ? WHERE id = ?', (points, new_level, student_id))
     conn.commit()
@@ -2424,7 +2679,7 @@ def add_points_to_team(homework_id, student_id, points_to_add, allow_bonus=True)
 
     # Hole TeamChallenge
     team_challenge = conn.execute(
-        'SELECT id, current_score FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
+        'SELECT id, current_score, goal_score, start_time, end_time, success FROM TeamChallenges WHERE homework_id = ?', (homework_id,)
     ).fetchone()
     if not team_challenge:
         conn.close()
@@ -2451,8 +2706,78 @@ def add_points_to_team(homework_id, student_id, points_to_add, allow_bonus=True)
         'UPDATE TeamChallenges SET current_score = ? WHERE id = ?',
         (new_score, team_challenge['id'])
     )
+
+    # Status prüfen und ggf. updaten
+    now = datetime.now()
+    end_time = team_challenge['end_time']
+    if end_time:
+        try:
+            end_dt = datetime.fromisoformat(end_time)
+        except Exception:
+            end_dt = None
+    else:
+        end_dt = None
+
+    # Status nur ändern, wenn noch "open"
+    if team_challenge['success'] == 'open':
+        if new_score >= team_challenge['goal_score']:
+            # Ziel erreicht
+            conn.execute(
+                'UPDATE TeamChallenges SET success = ? WHERE id = ?', ('success', team_challenge['id'])
+            )
+        elif end_dt and now > end_dt:
+            # Zeit abgelaufen, Ziel nicht erreicht
+            if new_score < team_challenge['goal_score']:
+                conn.execute(
+                    'UPDATE TeamChallenges SET success = ? WHERE id = ?', ('failed', team_challenge['id'])
+                )
+
     conn.commit()
     conn.close()
+
+def check_and_award_badges(user_id):
+    conn = get_db_connection()
+    new_badges = []
+    # Level
+    level = conn.execute('SELECT level FROM Participants WHERE id = ?', (user_id,)).fetchone()['level']
+    for badge in conn.execute("SELECT * FROM Badges WHERE category = 'level' AND threshold <= ?", (level,)).fetchall():
+        if _award_badge(conn, user_id, badge['id']):
+            new_badges.append({"name": badge['name'], "description": badge['description']})
+    # Homework
+    hw_count = conn.execute('SELECT COUNT(*) FROM HomeworkResults WHERE student_id = ?', (user_id,)).fetchone()[0]
+    for badge in conn.execute("SELECT * FROM Badges WHERE category = 'homework' AND threshold <= ?", (hw_count,)).fetchall():
+        if _award_badge(conn, user_id, badge['id']):
+            new_badges.append({"name": badge['name'], "description": badge['description']})
+    # Retry
+    retry_count = conn.execute('SELECT COUNT(*) FROM HomeworkRetryResults WHERE student_id = ?', (user_id,)).fetchone()[0]
+    for badge in conn.execute("SELECT * FROM Badges WHERE category = 'retry' AND threshold <= ?", (retry_count,)).fetchall():
+        if _award_badge(conn, user_id, badge['id']):
+            new_badges.append({"name": badge['name'], "description": badge['description']})
+    # Team
+    team_count = conn.execute('''
+        SELECT COUNT(*) FROM TeamChallenges
+        JOIN HomeworkResults ON HomeworkResults.homework_id = TeamChallenges.homework_id
+        WHERE HomeworkResults.student_id = ?
+    ''', (user_id,)).fetchone()[0]
+    for badge in conn.execute("SELECT * FROM Badges WHERE category = 'team' AND threshold <= ?", (team_count,)).fetchall():
+        if _award_badge(conn, user_id, badge['id']):
+            new_badges.append({"name": badge['name'], "description": badge['description']})
+    conn.commit()
+    conn.close()
+    if new_badges:
+        session['new_badges'] = new_badges
+    else:
+        session.pop('new_badges', None)
+    return new_badges
+
+def _award_badge(conn, user_id, badge_id):
+    already = conn.execute(
+        "SELECT 1 FROM UserBadges WHERE user_id = ? AND badge_id = ?", (user_id, badge_id)
+    ).fetchone()
+    if not already:
+        conn.execute(
+            "INSERT INTO UserBadges (user_id, badge_id) VALUES (?, ?)", (user_id, badge_id)
+        )
 
 
 if __name__ == '__main__':
