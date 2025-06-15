@@ -400,7 +400,7 @@ def student_details(student_id, class_id, teacher_id):
     # Kombiniere und sortiere nach Datum:
     all_results = list(mc_results) + list(open_results)
     all_results.sort(key=lambda r: r['date_submitted'])
-    all_results.sort(key=get_sort_key)
+
 
     dates = []
     percent_corrects = []
@@ -543,7 +543,7 @@ def student_dashboard():
     # Kombiniere und sortiere nach Datum
     all_skill_history = list(mc_skill_history) + list(open_skill_history)
     all_skill_history.sort(key=lambda entry: entry['date_submitted'])
-    all_results.sort(key=get_sort_key)
+
 
     for entry in all_skill_history:
         # Nur Datum (YYYY-MM-DD)
@@ -843,7 +843,6 @@ def class_details_student(class_id, student_id):
     all_results = list(mc_results) + list(open_results)
     all_results.sort(key=lambda r: r['date_submitted'])
 
-    all_results.sort(key=get_sort_key)
 
     dates = []
     percent_corrects = []
@@ -881,13 +880,6 @@ def class_details_student(class_id, student_id):
         titles=titles
     )
 
-def get_sort_key(r):
-    val = r['date_submitted']
-    if isinstance(val, str):
-        return val  # ISO-Format: lexikographisch sortierbar
-    elif isinstance(val, datetime):
-        return val.isoformat()
-    return ""
 
 
 
