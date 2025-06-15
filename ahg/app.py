@@ -151,6 +151,26 @@ def class_details_teacher(class_id, teacher_id):
         ''', (class_id,)
     ).fetchall()
 
+    homework_list_graphs = conn.execute(
+    '''
+    SELECT Homework.id, Homework.title, Homework.date_created, Homework.status,
+        CASE 
+            WHEN EXISTS (
+                SELECT 1 FROM HomeworkResults
+                WHERE HomeworkResults.homework_id = Homework.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM HomeworkOpenQuestionsResults
+                WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+            )
+            THEN 'Done'
+            ELSE 'Open'
+        END AS done_status
+    FROM Homework
+    WHERE Homework.class_id = ?
+    ''', (class_id,)
+).fetchall()
+
     # Team Challenges für diese Klasse abrufen
     team_challenges = conn.execute(
         '''
@@ -163,53 +183,119 @@ def class_details_teacher(class_id, teacher_id):
         (class_id,)
     ).fetchall()
 
-    # Durchschnittswerte für Graphen berechnen
+    # Durchschnittswerte für Graphen berechnen (MC + Open Questions, jeweils in % und Skill)
     dates = []
     titles = []
-    avg_correct_counts = []
+    avg_percent_corrects = []
     avg_skill_levels = []
 
-    for hw in homework_list:
-        # Prüfen, ob es Bearbeitungen gibt
-        count_results = conn.execute(
+    # Hole alle veröffentlichten Hausaufgaben (MC + Open)
+    published_homework = [hw for hw in homework_list_graphs if hw['status'] == 'published']
+
+    for hw in published_homework:
+        # Datum und Titel erfassen
+        date_created = hw['date_created']
+        if isinstance(date_created, str):
+            try:
+                date_created = datetime.strptime(date_created, '%Y-%m-%d')
+            except ValueError:
+                date_created = datetime.strptime(date_created, '%Y-%m-%d %H:%M:%S')
+        dates.append(date_created.strftime('%Y-%m-%d'))
+        titles.append(hw['title'])
+
+        # Durchschnitt Prozent (MC)
+        avg_mc = conn.execute(
             '''
-            SELECT COUNT(*) as count
+            SELECT AVG(percent_correct) AS avg_percent
             FROM HomeworkResults
             WHERE homework_id = ?
             ''', (hw['id'],)
-        ).fetchone()['count']
+        ).fetchone()['avg_percent']
 
-        # Nur Hausaufgaben mit Bearbeitungen berücksichtigen
-        if count_results > 0:
-            # Datum und Titel erfassen
-            date_created = hw['date_created']
-            if isinstance(date_created, str):
-                try:
-                    date_created = datetime.strptime(date_created, '%Y-%m-%d')
-                except ValueError:
-                    date_created = datetime.strptime(date_created, '%Y-%m-%d %H:%M:%S')
-            dates.append(date_created.strftime('%Y-%m-%d'))
-            titles.append(hw['title'])
+        # Durchschnitt Prozent (Open)
+        avg_open = conn.execute(
+            '''
+            SELECT AVG(percent_correct) AS avg_percent
+            FROM HomeworkOpenQuestionsResults
+            WHERE homework_id = ?
+            ''', (hw['id'],)
+        ).fetchone()['avg_percent']
 
-            # Durchschnitt der richtigen Antworten
-            avg_correct = conn.execute(
-                '''
-                SELECT ROUND(AVG(correct_count), 0) AS avg_correct
-                FROM HomeworkResults
-                WHERE homework_id = ?
-                ''', (hw['id'],)
-            ).fetchone()['avg_correct'] or 0
-            avg_correct_counts.append(avg_correct)
+        # Kombiniere beide (nur die, die existieren)
+        percent_values = [v for v in [avg_mc, avg_open] if v is not None]
+        avg_percent = round(sum(percent_values) / len(percent_values), 2) if percent_values else 0
+        avg_percent_corrects.append(avg_percent)
 
-            # Durchschnitt des Klassenskill-Levels
-            avg_skill = conn.execute(
-                '''
-                SELECT ROUND(AVG(new_class_skill_level), 0) AS avg_skill
-                FROM HomeworkResults
-                WHERE homework_id = ?
-                ''', (hw['id'],)
-            ).fetchone()['avg_skill'] or 0
-            avg_skill_levels.append(avg_skill)
+        # Durchschnitt Skill Level (MC)
+        avg_skill_mc = conn.execute(
+            '''
+            SELECT AVG(new_class_skill_level) AS avg_skill
+            FROM HomeworkResults
+            WHERE homework_id = ?
+            ''', (hw['id'],)
+        ).fetchone()['avg_skill']
+
+        # Durchschnitt Skill Level (Open)
+        avg_skill_open = conn.execute(
+            '''
+            SELECT AVG(new_class_skill_level) AS avg_skill
+            FROM HomeworkOpenQuestionsResults
+            WHERE homework_id = ?
+            ''', (hw['id'],)
+        ).fetchone()['avg_skill']
+
+        skill_values = [v for v in [avg_skill_mc, avg_skill_open] if v is not None]
+        avg_skill = round(sum(skill_values) / len(skill_values), 2) if skill_values else 0
+        avg_skill_levels.append(avg_skill)
+
+    # Nur veröffentlichte Aufgaben zählen!
+    published_homework = [hw for hw in homework_list if hw['status'] == 'published']
+    published_team_challenges = [tc for tc in team_challenges if tc['status'] == 'published']
+    total_tasks = len(published_homework) + len(published_team_challenges)
+
+    # Dicts für alle Schüler
+    total_homework_per_student = {}
+    completed_homework_per_student = {}
+
+    for s in students:
+        student_id = s['id']
+        # Erledigte MC-Aufgaben
+        mc_done = conn.execute(
+            '''
+            SELECT COUNT(*) FROM HomeworkResults
+            JOIN Homework ON HomeworkResults.homework_id = Homework.id
+            WHERE Homework.class_id = ? AND HomeworkResults.student_id = ?
+            ''', (class_id, student_id)
+        ).fetchone()[0]
+        # Erledigte Open Questions
+        open_done = conn.execute(
+            '''
+            SELECT COUNT(*) FROM HomeworkOpenQuestionsResults
+            JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+            WHERE Homework.class_id = ? AND HomeworkOpenQuestionsResults.student_id = ?
+            ''', (class_id, student_id)
+        ).fetchone()[0]
+        # Erledigte Team Challenges (MC + Open)
+        team_mc_done = conn.execute(
+            '''
+            SELECT COUNT(*) FROM HomeworkResults
+            JOIN Homework ON HomeworkResults.homework_id = Homework.id
+            WHERE Homework.class_id = ? AND Homework.is_team_challenge = 1 AND HomeworkResults.student_id = ?
+            ''', (class_id, student_id)
+        ).fetchone()[0]
+        team_open_done = conn.execute(
+            '''
+            SELECT COUNT(*) FROM HomeworkOpenQuestionsResults
+            JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+            WHERE Homework.class_id = ? AND Homework.is_team_challenge = 1 AND HomeworkOpenQuestionsResults.student_id = ?
+            ''', (class_id, student_id)
+        ).fetchone()[0]
+
+        completed = mc_done + open_done + team_mc_done + team_open_done
+        total_homework_per_student[student_id] = total_tasks
+        completed_homework_per_student[student_id] = completed
+
+        print 
 
     conn.close()
 
@@ -222,9 +308,11 @@ def class_details_teacher(class_id, teacher_id):
         team_challenges=team_challenges,
         dates=dates,
         titles=titles,
-        avg_correct_counts=avg_correct_counts,
-        avg_skill_levels=avg_skill_levels
-    )
+        avg_percent_corrects=avg_percent_corrects,  # <- das ist die richtige Liste!
+        avg_skill_levels=avg_skill_levels,
+        total_homework_per_student=total_homework_per_student,
+        completed_homework_per_student=completed_homework_per_student
+        )
 
 
 
@@ -289,38 +377,48 @@ def student_details(student_id, class_id, teacher_id):
         conn.close()
         return "Fehler: Schüler existiert nicht oder ist nicht in dieser Klasse.", 404
 
-    # Hausaufgabenergebnisse und Skill-Level-Verlauf abrufen
-    results = conn.execute(
+    # MC
+    mc_results = conn.execute(
         '''
-        SELECT 
-            HomeworkResults.correct_count, 
-            HomeworkResults.date_submitted, 
-            Homework.title, 
-            HomeworkResults.new_class_skill_level
+        SELECT date_submitted, percent_correct, new_class_skill_level, Homework.title
         FROM HomeworkResults
         JOIN Homework ON HomeworkResults.homework_id = Homework.id
         WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
-        ORDER BY HomeworkResults.date_submitted ASC
-        ''',
-        (student_id, class_id)
+        ''', (student_id, class_id)
     ).fetchall()
 
-    # Initialisiere Listen für Graphendaten
-    dates, titles, correct_counts, skill_levels = [], [], [], []
+    # Open
+    open_results = conn.execute(
+        '''
+        SELECT date_submitted, percent_correct, new_class_skill_level, Homework.title
+        FROM HomeworkOpenQuestionsResults
+        JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+        WHERE HomeworkOpenQuestionsResults.student_id = ? AND Homework.class_id = ?
+        ''', (student_id, class_id)
+    ).fetchall()
 
-    for result in results:
-        # Datum umwandeln, falls nötig
-        try:
-            date_submitted = datetime.strptime(result['date_submitted'], '%Y-%m-%d')
-        except (ValueError, TypeError):
-            date_submitted = result['date_submitted']
-        dates.append(date_submitted.strftime('%Y-%m-%d'))
+    # Kombiniere und sortiere nach Datum:
+    all_results = list(mc_results) + list(open_results)
+    all_results.sort(key=lambda r: r['date_submitted'])
+    all_results.sort(key=get_sort_key)
 
-        titles.append(result['title'])
-        correct_counts.append(result['correct_count'])
-        skill_levels.append(result['new_class_skill_level'])
+    dates = []
+    percent_corrects = []
+    skill_levels = []
+    titles = []
 
-    mean_correct = round(sum(correct_counts) / len(correct_counts), 2) if correct_counts else 0
+    for r in all_results:
+        # Stelle sicher, dass nur das Datum (YYYY-MM-DD) verwendet wird
+        date_val = r['date_submitted']
+        if isinstance(date_val, str):
+            date_val = date_val[:10]  # Nur die ersten 10 Zeichen (YYYY-MM-DD)
+        elif isinstance(date_val, datetime):
+            date_val = date_val.strftime('%Y-%m-%d')
+        dates.append(date_val)
+        percent = r['percent_correct']
+        percent_corrects.append(round(percent, 2) if percent is not None else None)
+        skill_levels.append(r['new_class_skill_level'])
+        titles.append(r['title'])
 
     conn.close()
 
@@ -331,8 +429,7 @@ def student_details(student_id, class_id, teacher_id):
         teacher_id=teacher_id,
         dates=dates,
         titles=titles,
-        correct_counts=correct_counts,
-        mean_correct=mean_correct,
+        percent_corrects=percent_corrects,
         skill_dates=dates,
         skill_levels=skill_levels
     )
@@ -404,34 +501,61 @@ def student_dashboard():
         (student_id,)
     ).fetchall()
 
-    # Verlauf des gesamten Skill-Levels nur für bearbeitete Hausaufgaben
-    skill_history = conn.execute(
+    # Nach dem Laden von student_id
+    favorite_badges = conn.execute(
         '''
-        SELECT 
-            HomeworkResults.date_submitted, 
-            Homework.title, 
-            HomeworkResults.new_skill_level,
-            Classes.class_name  -- Klassennamen hinzufügen
+        SELECT Badges.* FROM UserFavoriteBadges
+        JOIN Badges ON UserFavoriteBadges.badge_id = Badges.id
+        WHERE UserFavoriteBadges.user_id = ?
+        ORDER BY UserFavoriteBadges.position
+        ''', (student_id,)
+    ).fetchall()
+
+    # Graphen vorbereiten (MC + Open Questions kombiniert für Skill-Level-Graph)
+    dates = []
+    titles = []
+    skill_levels = []
+    class_names = []
+
+    # Hole alle Skill-Änderungen aus MC und Open Questions
+    mc_skill_history = conn.execute(
+        '''
+        SELECT HomeworkResults.date_submitted, Homework.title, HomeworkResults.new_skill_level, Classes.class_name
         FROM HomeworkResults
         JOIN Homework ON HomeworkResults.homework_id = Homework.id
-        JOIN Classes ON Homework.class_id = Classes.id  -- Annahme, dass Homework eine class_id hat
+        JOIN Classes ON Homework.class_id = Classes.id
         WHERE HomeworkResults.student_id = ?
-        ORDER BY HomeworkResults.date_submitted
         ''',
         (student_id,)
     ).fetchall()
 
-    # Graphen vorbereiten
-    dates = []
-    titles = []
-    skill_levels = []
-    class_names = []  # Neue Liste für die Klassennamen
+    open_skill_history = conn.execute(
+        '''
+        SELECT HomeworkOpenQuestionsResults.date_submitted, Homework.title, HomeworkOpenQuestionsResults.new_skill_level, Classes.class_name
+        FROM HomeworkOpenQuestionsResults
+        JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+        JOIN Classes ON Homework.class_id = Classes.id
+        WHERE HomeworkOpenQuestionsResults.student_id = ?
+        ''',
+        (student_id,)
+    ).fetchall()
 
-    for entry in skill_history:
-        dates.append(entry['date_submitted'])
+    # Kombiniere und sortiere nach Datum
+    all_skill_history = list(mc_skill_history) + list(open_skill_history)
+    all_skill_history.sort(key=lambda entry: entry['date_submitted'])
+    all_results.sort(key=get_sort_key)
+
+    for entry in all_skill_history:
+        # Nur Datum (YYYY-MM-DD)
+        date_val = entry['date_submitted']
+        if isinstance(date_val, str):
+            date_val = date_val[:10]
+        elif isinstance(date_val, datetime):
+            date_val = date_val.strftime('%Y-%m-%d')
+        dates.append(date_val)
         titles.append(entry['title'])
         skill_levels.append(entry['new_skill_level'])
-        class_names.append(entry['class_name'])  # Klassennamen sammeln
+        class_names.append(entry['class_name'])
 
     all_classes = conn.execute('SELECT id, class_name FROM Classes').fetchall()
     all_classes_dict = [{'id': int(class_['id']), 'class_name': class_['class_name']} for class_ in all_classes]
@@ -443,14 +567,46 @@ def student_dashboard():
     ])
 
     level = student['level']
-    hw_count = conn.execute('SELECT COUNT(*) FROM HomeworkResults WHERE student_id = ?', (student_id,)).fetchone()[0]
-    retry_count = conn.execute('SELECT COUNT(*) FROM HomeworkRetryResults WHERE student_id = ?', (student_id,)).fetchone()[0]
+
+    # Homework: MC + Open Questions
+    hw_count = conn.execute('''
+        SELECT
+            (SELECT COUNT(*) FROM HomeworkResults WHERE student_id = ?)
+        + (SELECT COUNT(*) FROM HomeworkOpenQuestionsResults WHERE student_id = ?)
+    ''', (student_id, student_id)).fetchone()[0]
+
+    # Retry: MC + Open Questions
+    retry_count = conn.execute('''
+        SELECT
+            (SELECT COUNT(*) FROM HomeworkRetryResults WHERE student_id = ?)
+        + (SELECT COUNT(*) FROM HomeworkRetryOpenResults WHERE student_id = ?)
+    ''', (student_id, student_id)).fetchone()[0]
+
+    # Team: MC + Open Questions, nur rechtzeitig abgegebene Team-Challenges
     team_success_count = conn.execute('''
         SELECT COUNT(*) FROM TeamChallenges
-        JOIN HomeworkResults ON HomeworkResults.homework_id = TeamChallenges.homework_id
-        WHERE HomeworkResults.student_id = ?
-        AND TeamChallenges.success = 'success'
-    ''', (student_id,)).fetchone()[0]
+        WHERE TeamChallenges.success = 'success'
+        AND (
+            EXISTS (
+                SELECT 1 FROM HomeworkResults
+                WHERE HomeworkResults.homework_id = TeamChallenges.homework_id
+                AND HomeworkResults.student_id = ?
+                AND (
+                        TeamChallenges.completed_at IS NULL
+                        OR HomeworkResults.date_submitted <= TeamChallenges.completed_at
+                    )
+            )
+            OR EXISTS (
+                SELECT 1 FROM HomeworkOpenQuestionsResults
+                WHERE HomeworkOpenQuestionsResults.homework_id = TeamChallenges.homework_id
+                AND HomeworkOpenQuestionsResults.student_id = ?
+                AND (
+                        TeamChallenges.completed_at IS NULL
+                        OR HomeworkOpenQuestionsResults.date_submitted <= TeamChallenges.completed_at
+                    )
+            )
+        )
+    ''', (student_id, student_id)).fetchone()[0]
 
     # Gruppiere Badges nach Kategorie
     from collections import defaultdict
@@ -501,6 +657,16 @@ def student_dashboard():
 
     conn.close()
 
+    thresholds = []
+    needed = 25
+    total = 0
+    for _ in range(1, 30):
+        total += needed
+        thresholds.append(total)
+        needed *= 2
+
+    check_and_award_badges(student_id)
+
     return render_template(
         'student_dashboard.html',
         student=student,
@@ -510,8 +676,10 @@ def student_dashboard():
         titles=titles,
         class_names=class_names,
         all_classes=all_classes_dict,
+        favorite_badges=favorite_badges,
         badge_progress=badge_progress,
         new_badges=new_badges,
+        thresholds=thresholds,
         level_up=level_up
     )
 
@@ -555,7 +723,6 @@ def join_class():
 
 @app.route('/class_details_student/<int:class_id>/<int:student_id>')
 def class_details_student(class_id, student_id):
-    import json
     from datetime import datetime
     conn = get_db_connection()
 
@@ -628,50 +795,72 @@ def class_details_student(class_id, student_id):
         (student_id, student_id, class_id)
     ).fetchall()
 
-    conn = get_db_connection()
-    badges = conn.execute('''
-        SELECT Badges.name, Badges.description, Badges.category, Badges.threshold, UserBadges.awarded_at
-        FROM UserBadges
-        JOIN Badges ON UserBadges.badge_id = Badges.id
-        WHERE UserBadges.user_id = ?
-    ''', (student_id,)).fetchall()
+    students_list = conn.execute(
+        '''
+        SELECT Participants.id, Participants.name, ClassMembers.class_skill_level
+        FROM Participants
+        JOIN ClassMembers ON Participants.id = ClassMembers.student_id
+        WHERE ClassMembers.class_id = ?
+        ''', (class_id,)
+    ).fetchall()
+
+    # Für alle Teilnehmer die Favoriten-Badges laden
+    student_fav_badges = {}
+    for s in students_list:
+        favs = conn.execute(
+            '''
+            SELECT Badges.icon_url, Badges.name FROM UserFavoriteBadges
+            JOIN Badges ON UserFavoriteBadges.badge_id = Badges.id
+            WHERE UserFavoriteBadges.user_id = ?
+            ORDER BY UserFavoriteBadges.position
+            ''', (s['id'],)
+        ).fetchall()
+        student_fav_badges[s['id']] = favs
 
     # Progress calculation
     total_homework = len(homework_list) + len(team_challenges)
     completed_homework = sum(1 for hw in homework_list if hw['status'] == 'Done') + sum(1 for tc in team_challenges if tc['status'] == 'Done')
-    progress_percent = int((completed_homework / total_homework) * 100) if total_homework > 0 else 0
 
-    # Daten für Graphen vorbereiten – nur bearbeitete Hausaufgaben
-    homework_results = conn.execute(
+    # Daten für Graphen vorbereiten – MC + Open Questions kombiniert
+    mc_results = conn.execute(
         '''
-        SELECT 
-            HomeworkResults.correct_count, 
-            HomeworkResults.date_submitted, 
-            Homework.title, 
-            HomeworkResults.new_class_skill_level  -- Verwenden des Klassenskill-Levels
+        SELECT date_submitted, percent_correct, new_class_skill_level, Homework.title
         FROM HomeworkResults
         JOIN Homework ON HomeworkResults.homework_id = Homework.id
         WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
-        ORDER BY HomeworkResults.date_submitted ASC
-        ''',
-        (student_id, class_id)  # <-- Zwei Parameter, da die zusätzliche JOIN-Bedingung entfernt wurde
+        ''', (student_id, class_id)
     ).fetchall()
 
-    # Graphdaten erstellen
-    dates = []
-    titles = []
-    correct_counts = []
-    skill_levels = []
+    open_results = conn.execute(
+        '''
+        SELECT date_submitted, percent_correct, new_class_skill_level, Homework.title
+        FROM HomeworkOpenQuestionsResults
+        JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+        WHERE HomeworkOpenQuestionsResults.student_id = ? AND Homework.class_id = ?
+        ''', (student_id, class_id)
+    ).fetchall()
 
-    for result in homework_results:
-        # Datum konvertieren
-        date_submitted = result['date_submitted']
-        if isinstance(date_submitted, str):
-            date_submitted = datetime.strptime(date_submitted, '%Y-%m-%d')
-        dates.append(date_submitted.strftime('%Y-%m-%d'))
-        titles.append(result['title'])
-        correct_counts.append(result['correct_count'])
-        skill_levels.append(result['new_class_skill_level'])  # Verwenden des neuen Klassenskill-Levels
+    all_results = list(mc_results) + list(open_results)
+    all_results.sort(key=lambda r: r['date_submitted'])
+
+    all_results.sort(key=get_sort_key)
+
+    dates = []
+    percent_corrects = []
+    skill_levels = []
+    titles = []
+
+    for r in all_results:
+        date_val = r['date_submitted']
+        if isinstance(date_val, str):
+            date_val = date_val[:10]
+        elif isinstance(date_val, datetime):
+            date_val = date_val.strftime('%Y-%m-%d')
+        dates.append(date_val)
+        percent = r['percent_correct']
+        percent_corrects.append(round(percent, 2) if percent is not None else None)
+        skill_levels.append(r['new_class_skill_level'])
+        titles.append(r['title'])
 
     conn.close()
 
@@ -681,15 +870,24 @@ def class_details_student(class_id, student_id):
         student=student,
         student_id=student_id,
         homework_list=homework_list,
-        dates=dates,
-        titles=titles,
-        correct_counts=correct_counts,
-        skill_levels=skill_levels,
-        progress_percent=progress_percent,
-        completed_homework=completed_homework,
         team_challenges=team_challenges,
-        total_homework=total_homework
+        students=students_list,
+        student_fav_badges=student_fav_badges,
+        total_homework=total_homework,
+        completed_homework=completed_homework,
+        dates=dates,
+        percent_corrects=percent_corrects,
+        skill_levels=skill_levels,
+        titles=titles
     )
+
+def get_sort_key(r):
+    val = r['date_submitted']
+    if isinstance(val, str):
+        return val  # ISO-Format: lexikographisch sortierbar
+    elif isinstance(val, datetime):
+        return val.isoformat()
+    return ""
 
 
 
@@ -1028,16 +1226,18 @@ def view_homework_student(homework_id, student_id):
     # Überprüfen, ob die Hausaufgabe bereits eingereicht wurde
     homework_status = conn.execute(
         '''
-        SELECT CASE 
-                   WHEN HomeworkResults.date_submitted IS NOT NULL THEN 'Done'
-                   ELSE 'Open'
-               END AS status,
-               HomeworkResults.selected_answers
+        SELECT 
+            CASE 
+                WHEN mc.date_submitted IS NOT NULL OR openq.date_submitted IS NOT NULL THEN 'Done'
+                ELSE 'Open'
+            END AS status,
+            mc.selected_answers,
+            openq.feedback_json
         FROM Homework
-        LEFT JOIN HomeworkResults ON Homework.id = HomeworkResults.homework_id
-        AND HomeworkResults.student_id = ?
+        LEFT JOIN HomeworkResults mc ON Homework.id = mc.homework_id AND mc.student_id = ?
+        LEFT JOIN HomeworkOpenQuestionsResults openq ON Homework.id = openq.homework_id AND openq.student_id = ?
         WHERE Homework.id = ?
-        ''', (student_id, homework_id)
+        ''', (student_id, student_id, homework_id)
     ).fetchone()
 
     selected_answers = {}
@@ -1087,15 +1287,24 @@ def view_homework_student(homework_id, student_id):
     # Wenn Hausaufgabe schon bearbeitet wurde, nimm das gespeicherte Skill-Level
     answered_skill_level = None
     if homework_status and homework_status['status'] == "Done":
+        # Versuche zuerst, das Skill-Level aus OpenQuestionsResults zu holen
         result = conn.execute(
-            'SELECT answered_skill_level FROM HomeworkResults WHERE homework_id = ? AND student_id = ? ORDER BY date_submitted DESC LIMIT 1',
+            'SELECT answered_skill_level FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND student_id = ? ORDER BY date_submitted DESC LIMIT 1',
             (homework_id, student_id)
         ).fetchone()
-        if result is not None and result['answered_skill_level'] is not None:
+        # Falls dort nichts steht, nimm das aus HomeworkResults (MC)
+        if not result or result['answered_skill_level'] is None:
+            result = conn.execute(
+                'SELECT answered_skill_level FROM HomeworkResults WHERE homework_id = ? AND student_id = ? ORDER BY date_submitted DESC LIMIT 1',
+                (homework_id, student_id)
+            ).fetchone()
+        if result and result['answered_skill_level'] is not None:
             answered_skill_level = result['answered_skill_level']
 
     if answered_skill_level is not None:
         student_skill_level = answered_skill_level
+
+    print(f"Answered Skill Level: {answered_skill_level}")
 
     if student_skill_level <= 3:
         skill_level = 1
@@ -1185,7 +1394,7 @@ def view_homework_student(homework_id, student_id):
         openq_answers[str(row['open_question_id'])] = row['answer']
     conn.close()
 
-    print("Loaded questions:", len(questions), "Skill Level:", skill_level)
+    print("DEBUG: homework_id", homework_id, "skill_level", skill_level, "len(question_data)", len(question_data))
 
     return render_template(
         'view_homework_student.html',
@@ -1339,16 +1548,21 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         (homework_id,)
     ).fetchall()
 
-    # Alle Ergebnisse mit answered_skill_level laden
-    results = conn.execute(
+    # --- NEU: Ergebnisse aus beiden Tabellen (MC + Open) kombinieren ---
+    mc_results = conn.execute(
         'SELECT student_id, answered_skill_level FROM HomeworkResults WHERE homework_id = ?', (homework_id,)
     ).fetchall()
+    openq_results = conn.execute(
+        'SELECT student_id, answered_skill_level FROM HomeworkOpenQuestionsResults WHERE homework_id = ?', (homework_id,)
+    ).fetchall()
 
-    # Skill-Gruppen-Zählung nach answered_skill_level
-    done_skill_1 = len([r for r in results if r['answered_skill_level'] is not None and r['answered_skill_level'] <= 3])
-    done_skill_4 = len([r for r in results if r['answered_skill_level'] is not None and 4 <= r['answered_skill_level'] <= 7])
-    done_skill_8 = len([r for r in results if r['answered_skill_level'] is not None and r['answered_skill_level'] >= 8])
-    num_done = len(results)
+    all_results = { (r['student_id'], r['answered_skill_level']) for r in mc_results }
+    all_results.update({ (r['student_id'], r['answered_skill_level']) for r in openq_results })
+
+    done_skill_1 = len([r for r in all_results if r[1] is not None and r[1] <= 3])
+    done_skill_4 = len([r for r in all_results if r[1] is not None and 4 <= r[1] <= 7])
+    done_skill_8 = len([r for r in all_results if r[1] is not None and r[1] >= 8])
+    num_done = len(all_results)
 
     # Alle Schüler der Klasse für Gesamtzahl pro Gruppe
     students = conn.execute(
@@ -1379,7 +1593,6 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         # Zähle alle Ergebnisse, bei denen answered_skill_level zur Gruppe passt und selected_answers[group_idx] existiert
         answered = 0
         correct = 0
-        # Hole alle passenden Results
         results = conn.execute(
             'SELECT selected_answers FROM HomeworkResults WHERE homework_id = ? AND answered_skill_level >= ? AND answered_skill_level <= ?',
             (
@@ -1391,16 +1604,14 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         for res in results:
             try:
                 answers = json.loads(res['selected_answers'])
-                # group_idx als string!
                 if str(group_idx) in answers:
                     answered += 1
-                    # Hole die richtige Antwort aus der DB
                     correct_answer = conn.execute(
                         'SELECT correct_answer FROM HomeworkQuestions WHERE id = ?', (q_id,)
                     ).fetchone()[0]
                     if str(answers[str(group_idx)]) == str(correct_answer):
                         correct += 1
-            except Exception as e:
+            except Exception:
                 pass
 
         wrong = answered - correct
@@ -1419,48 +1630,35 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
         'SELECT id, question, skill_level FROM HomeworkOpenQuestions WHERE homework_id = ?', (homework_id,)
     ).fetchall()
 
-    # Gruppiere Open Questions nach Skill-Level und sortiere sie nach id
+    # Gruppiere nach Skill-Level und sortiere
     openq_by_skill = {1: [], 4: [], 8: []}
     for row in openq_stats_rows:
         openq_by_skill[row['skill_level']].append(row)
     for k in openq_by_skill:
         openq_by_skill[k].sort(key=lambda q: q['id'])
 
+    # Lade alle Results für diese Hausaufgabe
+    results = conn.execute(
+        'SELECT feedback_json FROM HomeworkOpenQuestionsResults WHERE homework_id = ?',
+        (homework_id,)
+    ).fetchall()
+
     for row in openq_stats_rows:
-        oq_id = row['id']
-        skill_level = row['skill_level']
-        group_questions = openq_by_skill[skill_level]
-        group_idx = group_questions.index(row)
-
-        # Hole alle passenden Results für diese Skillgruppe
-        results = conn.execute(
-            'SELECT student_id, feedback_json FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND answered_skill_level >= ? AND answered_skill_level <= ?',
-            (
-                homework_id,
-                skill_level if skill_level == 8 else (1 if skill_level == 1 else 4),
-                skill_level if skill_level == 8 else (3 if skill_level == 1 else 7)
-            )
-        ).fetchall()
-
+        oq_id = str(row['id'])
         answered = 0
         correct = 0
         for res in results:
-            try:
-                feedback = json.loads(res['feedback_json'])
-                # Prüfe, ob der Schüler für diesen Index eine Antwort hat
-                # Die IDs der Fragen stimmen mit den Keys im feedback überein
-                if str(oq_id) in feedback:
-                    answered += 1
-                    if feedback[str(oq_id)].get("is_correct") is True:
-                        correct += 1
-            except Exception:
-                pass
+            feedback = json.loads(res['feedback_json'])
+            if oq_id in feedback:
+                answered += 1
+                if feedback[oq_id].get("is_correct") is True:
+                    correct += 1
 
         wrong = answered - correct
         percent_correct = int((correct / answered) * 100) if answered > 0 else 0
         percent_wrong = 100 - percent_correct if answered > 0 else 0
         question_stats.append({
-            "question_id": oq_id,
+            "question_id": int(oq_id),
             "answered": answered,
             "correct": correct,
             "wrong": wrong,
@@ -1468,9 +1666,27 @@ def view_homework_teacher(homework_id, class_id, teacher_id):
             "percent_wrong": percent_wrong
         })
 
-    print(f"OQID {oq_id} | Skill {skill_level} | GroupIdx {group_idx} | answered {answered} | correct {correct}")
-
     conn.close()
+
+    return render_template(
+        'view_homework_teacher.html',
+        homework=homework,
+        questions=questions,
+        class_info={'id': class_id},
+        teacher_id=teacher_id,
+        correct_answers=correct_answers,
+        explanations=explanations,
+        question_stats=question_stats,
+        open_questions=open_questions,
+        num_done=num_done,
+        total_students=total_skill_1 + total_skill_4 + total_skill_8,
+        done_skill_1=done_skill_1,
+        done_skill_4=done_skill_4,
+        done_skill_8=done_skill_8,
+        total_skill_1=total_skill_1,
+        total_skill_4=total_skill_4,
+        total_skill_8=total_skill_8,
+    )
 
     return render_template(
         'view_homework_teacher.html',
@@ -1526,7 +1742,7 @@ def submit_homework():
     selected_answers = data.get('selected_answers', {})
 
     # Datum der Abgabe erfassen
-    date_submitted = datetime.now().date()
+    date_submitted = datetime.now()
 
     try:
         # 1. Anpassung des Class Skill Levels
@@ -1541,6 +1757,13 @@ def submit_homework():
         ).fetchone()['class_skill_level']
 
         old_class_skill_level = class_skill_level
+
+        if old_class_skill_level <= 3:
+            q_skill_level = 1
+        elif old_class_skill_level <= 7:
+            q_skill_level = 4
+        else:
+            q_skill_level = 8
 
         # Neue Bewertung basierend auf der Leistung
         if correct_count > 7:
@@ -1583,9 +1806,11 @@ def submit_homework():
         # 3. MC-Feedback generieren (KI)
         # Hole alle Fragen und richtige Antworten
         questions = conn.execute(
-            'SELECT question, options, correct_answer, explanation, taxonomy FROM HomeworkQuestions WHERE homework_id = ?',
-            (homework_id,)
+            'SELECT question, options, correct_answer, explanation, taxonomy FROM HomeworkQuestions WHERE homework_id = ? AND skill_level = ?',
+            (homework_id, q_skill_level)
         ).fetchall()
+
+        print(f"DEBUG: homework_id {homework_id}, old_class_skill_level {old_class_skill_level}, len(questions) {len(questions)}")
 
         questions_for_gpt = []
         for idx, q in enumerate(questions):
@@ -1668,18 +1893,23 @@ Please answer in JSON:
             mc_feedback_summary = "No summary available."
             mc_feedback_recommendation = ""
 
+        # Nach dem Zählen von correct_count und incorrect_count:
+        total = correct_count + incorrect_count
+        percent_correct = (correct_count / total) * 100 if total > 0 else 0
+
+
         # Ergebnis speichern mit neuem Skill-Level, selected_answers und Feedback
         conn.execute(
             '''
             INSERT INTO HomeworkResults (homework_id, student_id, correct_count, 
                                          incorrect_count, date_submitted, 
                                          new_class_skill_level, new_skill_level, selected_answers,
-                                         mc_feedback_summary, mc_feedback_recommendation, answered_skill_level)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         mc_feedback_summary, mc_feedback_recommendation, answered_skill_level, percent_correct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (homework_id, student_id, correct_count, incorrect_count, date_submitted,
              class_skill_level, avg_class_skill, json.dumps(selected_answers),
-             mc_feedback_summary, mc_feedback_recommendation, old_class_skill_level)
+             mc_feedback_summary, mc_feedback_recommendation, old_class_skill_level, percent_correct)
         )
 
          # Team-Punkte gutschreiben, falls TeamChallenge
@@ -1737,9 +1967,9 @@ def check_open_questions():
     subject = class_info['subject']
     grade_level = class_info['grade_level']
     open_questions = conn.execute(
-        'SELECT id, question, sample_solution, taxonomy FROM HomeworkOpenQuestions WHERE homework_id = ? AND id IN (%s)' %
+        'SELECT id, question, sample_solution, taxonomy FROM HomeworkOpenQuestions WHERE id IN (%s)' %
         ','.join('?'*len(answers)),
-        (homework_id, *answers.keys())
+        tuple(answers.keys())
     ).fetchall()
 
     questions_for_gpt = []
@@ -1833,26 +2063,9 @@ def check_open_questions():
     class_skill_level = class_skill_level['class_skill_level'] if class_skill_level else 5
     old_class_skill_level = class_skill_level
 
-    # Speichere das Ergebnis in der Datenbank (Upsert)
-    conn.execute(
-        '''
-        INSERT INTO HomeworkOpenQuestionsResults (homework_id, student_id, feedback_json, correct_count, wrong_count, summary, recommendation, date_submitted, answered_skill_level)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(homework_id, student_id)
-        DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, recommendation=excluded.recommendation, date_submitted=excluded.date_submitted answered_skill_level=excluded.answered_skill_level
-        ''',
-        (
-            homework_id,
-            student_id,
-            json.dumps(gpt_json.get("feedback", {})),
-            correct_count,
-            wrong_count,
-            gpt_json.get("summary", ""),
-            gpt_json.get("recommendation", ""),
-            datetime.now().isoformat(),
-            old_class_skill_level
-        )
-    )
+    # Nach dem Zählen von correct_count und wrong_count:
+    total = correct_count + wrong_count
+    percent_correct = (correct_count / total) * 100 if total > 0 else 0
 
     # Neue Skill-Berechnung
     if correct_count <= 2:
@@ -1870,7 +2083,6 @@ def check_open_questions():
 
     print("Saved OpenQuestionsResults for", homework_id, student_id)
 
-    conn = get_db_connection()
     avg_class_skill = conn.execute(
         '''
         SELECT ROUND(AVG(class_skill_level), 0) as avg_skill
@@ -1888,6 +2100,34 @@ def check_open_questions():
         ''',
         (avg_class_skill, student_id)
     )
+
+        # Speichere das Ergebnis in der Datenbank (Upsert)
+    try:
+        conn.execute(
+            '''
+            INSERT INTO HomeworkOpenQuestionsResults (homework_id, student_id, feedback_json, correct_count, wrong_count, summary, recommendation, date_submitted, answered_skill_level, percent_correct, new_class_skill_level, new_skill_level)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(homework_id, student_id)
+            DO UPDATE SET feedback_json=excluded.feedback_json, correct_count=excluded.correct_count, wrong_count=excluded.wrong_count, summary=excluded.summary, recommendation=excluded.recommendation, date_submitted=excluded.date_submitted, answered_skill_level=excluded.answered_skill_level, percent_correct=excluded.percent_correct, new_class_skill_level=excluded.new_class_skill_level, new_skill_level=excluded.new_skill_level
+            ''',
+            (
+                homework_id,
+                student_id,
+                json.dumps(gpt_json.get("feedback", {})),
+                correct_count,
+                wrong_count,
+                gpt_json.get("summary", ""),
+                gpt_json.get("recommendation", ""),
+                datetime.now().isoformat(),
+                old_class_skill_level,
+                percent_correct,
+                new_class_skill_level,
+                avg_class_skill
+            )
+        )
+        print("Insert/Update HomeworkOpenQuestionsResults OK")
+    except Exception as e:
+        print("Insert/Update HomeworkOpenQuestionsResults FAILED:", e)
 
     # Team-Punkte gutschreiben, falls TeamChallenge
     team_challenge = conn.execute(
@@ -2720,10 +2960,12 @@ def add_points_to_team(homework_id, student_id, points_to_add, allow_bonus=True)
 
     # Status nur ändern, wenn noch "open"
     if team_challenge['success'] == 'open':
+        # ... Ziel erreicht
         if new_score >= team_challenge['goal_score']:
-            # Ziel erreicht
+            now_str = datetime.now().isoformat()
             conn.execute(
-                'UPDATE TeamChallenges SET success = ? WHERE id = ?', ('success', team_challenge['id'])
+                'UPDATE TeamChallenges SET success = ?, completed_at = ? WHERE id = ?',
+                ('success', now_str, team_challenge['id'])
             )
         elif end_dt and now > end_dt:
             # Zeit abgelaufen, Ziel nicht erreicht
@@ -2743,22 +2985,50 @@ def check_and_award_badges(user_id):
     for badge in conn.execute("SELECT * FROM Badges WHERE category = 'level' AND threshold <= ?", (level,)).fetchall():
         if _award_badge(conn, user_id, badge['id']):
             new_badges.append({"name": badge['name'], "description": badge['description']})
-    # Homework
-    hw_count = conn.execute('SELECT COUNT(*) FROM HomeworkResults WHERE student_id = ?', (user_id,)).fetchone()[0]
+    # Homework: MC + Open Questions
+    hw_count = conn.execute('''
+        SELECT
+            (SELECT COUNT(*) FROM HomeworkResults WHERE student_id = ?)
+        + (SELECT COUNT(*) FROM HomeworkOpenQuestionsResults WHERE student_id = ?)
+    ''', (user_id, user_id)).fetchone()[0]
+
     for badge in conn.execute("SELECT * FROM Badges WHERE category = 'homework' AND threshold <= ?", (hw_count,)).fetchall():
         if _award_badge(conn, user_id, badge['id']):
             new_badges.append({"name": badge['name'], "description": badge['description']})
-    # Retry
-    retry_count = conn.execute('SELECT COUNT(*) FROM HomeworkRetryResults WHERE student_id = ?', (user_id,)).fetchone()[0]
+    # Retry: MC + Open Questions
+    retry_count = conn.execute('''
+        SELECT
+            (SELECT COUNT(*) FROM HomeworkRetryResults WHERE student_id = ?)
+        + (SELECT COUNT(*) FROM HomeworkRetryOpenResults WHERE student_id = ?)
+    ''', (user_id, user_id)).fetchone()[0]
+
     for badge in conn.execute("SELECT * FROM Badges WHERE category = 'retry' AND threshold <= ?", (retry_count,)).fetchall():
         if _award_badge(conn, user_id, badge['id']):
             new_badges.append({"name": badge['name'], "description": badge['description']})
     # Team
     team_count = conn.execute('''
         SELECT COUNT(*) FROM TeamChallenges
-        JOIN HomeworkResults ON HomeworkResults.homework_id = TeamChallenges.homework_id
-        WHERE HomeworkResults.student_id = ?
-    ''', (user_id,)).fetchone()[0]
+        WHERE TeamChallenges.success = 'success'
+        AND EXISTS (
+                SELECT 1 FROM HomeworkResults
+                WHERE HomeworkResults.homework_id = TeamChallenges.homework_id
+                AND HomeworkResults.student_id = ?
+                AND (
+                        TeamChallenges.completed_at IS NULL
+                        OR HomeworkResults.date_submitted <= TeamChallenges.completed_at
+                    )
+            )
+        OR EXISTS (
+                SELECT 1 FROM HomeworkOpenQuestionsResults
+                WHERE HomeworkOpenQuestionsResults.homework_id = TeamChallenges.homework_id
+                AND HomeworkOpenQuestionsResults.student_id = ?
+                AND (
+                        TeamChallenges.completed_at IS NULL
+                        OR HomeworkOpenQuestionsResults.date_submitted <= TeamChallenges.completed_at
+                    )
+            )
+    ''', (user_id, user_id)).fetchone()[0]
+
     for badge in conn.execute("SELECT * FROM Badges WHERE category = 'team' AND threshold <= ?", (team_count,)).fetchall():
         if _award_badge(conn, user_id, badge['id']):
             new_badges.append({"name": badge['name'], "description": badge['description']})
@@ -2778,6 +3048,24 @@ def _award_badge(conn, user_id, badge_id):
         conn.execute(
             "INSERT INTO UserBadges (user_id, badge_id) VALUES (?, ?)", (user_id, badge_id)
         )
+
+@app.route('/set_favorite_badges', methods=['POST'])
+def set_favorite_badges():
+    if 'student_id' not in session:
+        return redirect('/')
+    student_id = session['student_id']
+    badge_ids = request.form.getlist('badge_ids[]')  # Array mit bis zu 3 IDs
+
+    conn = get_db_connection()
+    conn.execute('DELETE FROM UserFavoriteBadges WHERE user_id = ?', (student_id,))
+    for pos, badge_id in enumerate(badge_ids[:3], 1):
+        conn.execute(
+            'INSERT INTO UserFavoriteBadges (user_id, badge_id, position) VALUES (?, ?, ?)',
+            (student_id, badge_id, pos)
+        )
+    conn.commit()
+    conn.close()
+    return '', 204
 
 
 if __name__ == '__main__':

@@ -15,41 +15,69 @@
     <h2>Subject: {{ class_info['subject'] }}</h2>
     <h3>Teacher: {{ class_info['teacher_name'] }}</h3>
 
-    <h3>Your Information:</h3>
-    <ul class="info-list">
-        <li>Name: {{ student['name'] }}</li>
-        <li>Email: {{ student['email'] }}</li>
-        <li>Class Skill Level: {{ student['class_skill_level'] }}</li>
-        <li>
-            <div style="margin-top:8px;">
-                <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:1.05em; margin-bottom:2px;">
-                    Homework Completion
-                </div>
-                <div style="display: flex; background: linear-gradient(90deg, #4fc3f7, #1976d2); border-radius: 8px; overflow: hidden; height: 22px; box-shadow: 0 1px 2px #ccc; margin-bottom: 6px; max-width: 600px; margin-left:auto; margin-right:auto;">
-                    {% for i in range(total_homework) %}
-                        <div style="
-                            flex: 1;
-                            background: {% if i < completed_homework %}transparent{% else %}#d3d3d3{% endif %};
-                            height: 100%;
-                            border-right: {% if not loop.last %}1px solid #fff{% else %}none{% endif %};
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            color: #fff;
-                            font-weight: bold;
-                            font-size: 0.95em;
-                        ">
-                            {% if total_homework <= 10 %}{{ i+1 }}{% endif %}
-                        </div>
-                    {% endfor %}
-                </div>
-                <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:0.97em;">
-                    {{ completed_homework }} of {{ total_homework }} done
-                </div>
-            </div>
-        </li>
-    </ul>
+    <!-- Class Members und Your Information nebeneinander -->
+    <div style="display: flex; gap: 32px; justify-content: center; margin: 32px auto 0 auto; max-width: 900px;">
+        <!-- Your Information (links) -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Your Information</h3>
+            <ul class="info-list">
+                <li>Name: {{ student['name'] }}</li>
+                <li>Email: {{ student['email'] }}</li>
+                <li>Class Skill Level: {{ student['class_skill_level'] }}</li>
+            </ul>
+        </div>
+        <!-- Class Members (rechts) -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Class Members</h3>
+            <ul class="info-list">
+                {% for s in students %}
+                    <li style="display:flex;align-items:center;justify-content:space-between;">
+                        <span>
+                            {{ s.name }}
+                        </span>
+                        <span style="display:flex;gap:8px;">
+                            {% for badge in student_fav_badges[s.id] %}
+                                <img src="{{ url_for('static', filename=badge.icon_url.split('static/', 1)[-1]) }}" alt="{{ badge.name }}" title="{{ badge.name }}" style="height:32px;width:32px;object-fit:contain;border-radius:8px;">
+                            {% endfor %}
+                            {% for i in range(3 - student_fav_badges[s.id]|length) %}
+                                <span style="height:32px;width:32px;background:#eee;border-radius:8px;display:inline-block;"></span>
+                            {% endfor %}
+                        </span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
 
+    <!-- Homework Completion Balken zentral darunter -->
+    <div style="max-width: 600px; margin: 32px auto 24px auto; padding: 18px 24px; background: #f7f7ff; border-radius: 12px; box-shadow: 0 2px 8px rgba(80,80,160,0.07);">
+        <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:1.05em; margin-bottom:2px;">
+            Task Completion
+        </div>
+        <div style="display: flex; background: linear-gradient(90deg, #4fc3f7, #1976d2); border-radius: 8px; overflow: hidden; height: 22px; box-shadow: 0 1px 2px #ccc; margin-bottom: 6px;">
+            {% for i in range(total_homework) %}
+                <div style="
+                    flex: 1;
+                    background: {% if i < completed_homework %}transparent{% else %}#d3d3d3{% endif %};
+                    height: 100%;
+                    border-right: {% if not loop.last %}1px solid #fff{% else %}none{% endif %};
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #fff;
+                    font-weight: bold;
+                    font-size: 0.95em;
+                ">
+                    {% if total_homework <= 10 %}{{ i+1 }}{% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:0.97em;">
+            {{ completed_homework }} of {{ total_homework }} done
+        </div>
+    </div>
+
+    <!-- Team Challenges und Homework nebeneinander -->
     <div style="display: flex; gap: 32px; justify-content: center; margin: 32px auto 20px auto; max-width: 900px;">
         <!-- Team Challenges -->
         <div style="flex:1; min-width:300px;">
@@ -60,7 +88,8 @@
                         <a href="/homework/{{ tc.id }}/{{ student_id }}">
                             {{ tc.title }} (Created on: {{ tc.date_created }})
                         </a>
-                        - <strong>Status:</strong>
+                        <br>
+                        <strong>Status:</strong>
                         {% if tc.status == 'Done' %}
                             <span style="color: green;">Done</span>
                         {% else %}
@@ -84,7 +113,8 @@
                         <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
                             {{ homework['title'] }} (Created on: {{ homework['date_created'] }})
                         </a>
-                        - <strong>Status:</strong>
+                        <br>
+                        <strong>Status:</strong>
                         {% if homework['status'] == "Done" %}
                             <span style="color: green;">Done</span>
                         {% else %}
@@ -117,46 +147,53 @@
         <button type="submit" class="submit-button danger">Leave Class</button>
     </form>
 
-
+    <!-- JavaScript for Charts -->
     <script>
-        // Correct Answers
-        const correctCtx = document.getElementById('progressChart').getContext('2d');
-        const correctData = {
+        // Progress: Correct Answers in %
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        const data = {
             labels: {{ dates | tojson }},
-            datasets: [{
-                label: 'Correct Answers',
-                data: {{ correct_counts | tojson }},
-                borderColor: 'rgba(75, 192, 192, 1)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.2,
-                pointRadius: 5,
-                pointHoverRadius: 7
-            }]
+            datasets: [
+                {
+                    label: 'Correct Answers (%)',
+                    data: {{ percent_corrects | tojson }},
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
         };
 
-        const correctConfig = {
+        const config = {
             type: 'line',
-            data: correctData,
+            data: data,
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { position: 'top' },
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
                     title: {
                         display: true,
-                        text: 'Correct Answers Over Time',
+                        text: 'Correct Answers Over Time (%)',
                         font: { size: 20 }
                     },
-                    tooltip: {
+                    tooltip: {  // Tooltip for Correct Answers
                         callbacks: {
                             title: function(tooltipItems) {
                                 const index = tooltipItems[0].dataIndex;
-                                return {{ titles | tojson }}[index];
+                                return {{ titles | tojson }}[index]; // Display homework titles
                             },
                             label: function(tooltipItem) {
-                                return `Correct Answers: ${tooltipItem.raw}`;
+                                return `Correct Answers: ${tooltipItem.raw}%`; // Display correct answers in %
                             }
                         }
                     }
@@ -166,31 +203,33 @@
                         title: { display: true, text: 'Date' } 
                     },
                     y: { 
+                        title: { display: true, text: 'Correct Answers (%)' }, 
                         min: 0, 
-                        max: 10, 
-                        stepSize: 1, 
-                        title: { display: true, text: 'Correct Answers' } 
+                        max: 100, 
+                        ticks: { stepSize: 10 } 
                     }
                 }
             }
         };
-        new Chart(correctCtx, correctConfig);
+        new Chart(ctx, config);
 
-        // Skill Level
+        // Progress: Skill Level (inkl. Open Questions)
         const skillCtx = document.getElementById('skillChart').getContext('2d');
         const skillData = {
             labels: {{ dates | tojson }},
-            datasets: [{
-                label: 'Class Skill Level',
-                data: {{ skill_levels | tojson }},
-                borderColor: 'rgba(54, 162, 235, 1)',
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.2,
-                pointRadius: 5,
-                pointHoverRadius: 7
-            }]
+            datasets: [
+                {
+                    label: 'Skill Level',
+                    data: {{ skill_levels | tojson }},
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
         };
 
         const skillConfig = {
@@ -200,20 +239,25 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { position: 'top' },
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
                     title: {
                         display: true,
                         text: 'Class Skill Level Over Time',
                         font: { size: 20 }
                     },
-                    tooltip: {
+                    tooltip: {  // Tooltip for Skill Level
                         callbacks: {
                             title: function(tooltipItems) {
                                 const index = tooltipItems[0].dataIndex;
-                                return {{ titles | tojson }}[index];
+                                return {{ titles | tojson }}[index]; // Display homework titles
                             },
                             label: function(tooltipItem) {
-                                return `Class Skill Level: ${tooltipItem.raw}`;
+                                return `Skill Level: ${tooltipItem.raw}`; // Display skill level
                             }
                         }
                     }
@@ -223,10 +267,10 @@
                         title: { display: true, text: 'Date' } 
                     },
                     y: { 
+                        title: { display: true, text: 'Skill Level' }, 
                         min: 1, 
                         max: 10, 
-                        stepSize: 1, 
-                        title: { display: true, text: 'Class Skill Level' } 
+                        ticks: { stepSize: 1 } 
                     }
                 }
             }

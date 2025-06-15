@@ -21,22 +21,14 @@
             <div style="display:flex;align-items:center;gap:12px;max-width:560px;">
                 <span style="min-width:40px;text-align:right;font-weight:bold;">Level {{ student['level'] }}</span>
                 <div style="flex:1;position:relative;height:28px;background:#eee;border-radius:14px;overflow:hidden;">
-                    {% set thresholds = [25] %}
-                    {% set needed = 25 %}
-                    {% set total = 25 %}
-                    {% for i in range(2, 30) %}
-                        {% set needed = needed * 2 %}
-                        {% set total = total + needed %}
-                        {% set _ = thresholds.append(total) %}
-                    {% endfor %}
                     {% set prev_threshold = 0 if student['level'] == 1 else thresholds[student['level']-2] %}
                     {% set next_threshold = thresholds[student['level']-1] %}
                     {% set points_in_level = student['points'] - prev_threshold %}
                     {% set points_needed = next_threshold - prev_threshold %}
-                    {% set percent = (points_in_level / points_needed * 100) if points_needed > 0 else 100 %}
-                    <div style="height:100%;background:#4ad991;width:{{ percent }}%;transition:width 0.5s;"></div>
+                    {% set percent = (points_in_level / points_needed * 100) if points_needed > 0 else 0 %}
+                    <div style="height:100%;background:linear-gradient(90deg,#4fc3f7,#1976d2);width:{{ percent if percent <= 100 else 100 }}%;transition:width 0.5s;"></div>
                     <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;color:#222;">
-                        Still {{ next_threshold - student['points'] }} points to reach Level {{ student['level']+1 }}
+                        Still {{ next_threshold - student['points'] if next_threshold - student['points'] > 0 else 0 }} points to reach Level {{ student['level']+1 }}
                     </span>
                 </div>
                 <span style="min-width:40px;text-align:left;font-weight:bold;">Level {{ student['level']+1 }}</span>
@@ -54,6 +46,43 @@
             </li>
         {% endfor %}
     </ul>
+
+    <h3>Your Favorite Badges</h3>
+    <div id="favorite-badges" style="display:flex;gap:18px;margin-bottom:18px;justify-content:center;align-items:center;">
+        {% for badge in favorite_badges %}
+            <div style="text-align:center;">
+                <img src="{{ badge.icon_url }}" alt="{{ badge.name }}" style="height:64px;width:64px;object-fit:contain;">
+                <div style="font-size:0.95em;">{{ badge.name }}</div>
+            </div>
+        {% endfor %}
+        {% for i in range(3 - favorite_badges|length) %}
+            <div style="height:64px;width:64px;background:#eee;border-radius:12px;display:inline-block;"></div>
+        {% endfor %}
+    </div>
+
+    <button onclick="document.getElementById('badge-select-modal').style.display='block';">Choose Favorite Badges</button>
+        <div id="badge-select-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.3);z-index:9999;align-items:center;justify-content:center;">
+            <div style="background:#fff;padding:24px;border-radius:14px;max-width:600px;margin:60px auto;">
+                <h4>Select up to 3 favorite badges</h4>
+                <form id="favorite-badges-form">
+                    <div style="display:flex;flex-wrap:wrap;gap:16px;">
+                        {% for badge in badge_progress if badge.achieved %}
+                            <label style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+                                <input type="checkbox" name="badge_ids[]" value="{{ badge.id }}" style="margin-bottom:6px;"
+                                    {% if badge.id in favorite_badges|map(attribute='id')|list %}checked{% endif %}
+                                    onclick="limitBadges(this)">
+                                <img src="{{ badge.icon_url }}" alt="{{ badge.name }}" style="height:48px;width:48px;object-fit:contain;">
+                                <span style="font-size:0.9em;">{{ badge.name }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div style="margin-top:18px;">
+                        <button type="button" onclick="submitFavoriteBadges()">Save</button>
+                        <button type="button" onclick="document.getElementById('badge-select-modal').style.display='none';">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
     <h3 style="text-align:center;margin-top:36px;margin-bottom:18px;">Badges Progress</h3>
     <div style="max-width:600px;margin:0 auto 32px auto;">
@@ -258,6 +287,22 @@
         function checkSelection() {
             const classId = document.getElementById('class_id').value;
             return classId !== '';
+        }
+
+        function limitBadges(checkbox) {
+            const checked = document.querySelectorAll('#favorite-badges-form input[type="checkbox"]:checked');
+            if (checked.length > 3) {
+                checkbox.checked = false;
+                alert("You can select up to 3 badges.");
+            }
+        }
+        function submitFavoriteBadges() {
+            const form = document.getElementById('favorite-badges-form');
+            const data = new FormData(form);
+            fetch('/set_favorite_badges', {
+                method: 'POST',
+                body: data
+            }).then(() => location.reload());
         }
     </script>
 
