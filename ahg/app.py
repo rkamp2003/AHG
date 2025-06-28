@@ -1137,6 +1137,244 @@ def leave_class():
 
     return redirect(url_for('student_dashboard'))
 
+
+@app.route('/ai_progress_analysis/<int:student_id>/<int:class_id>')
+def ai_progress_analysis(student_id, class_id):
+    import markdown
+    conn = get_db_connection()
+    # Letzte Analyse laden
+    analysis = conn.execute(
+        '''SELECT analysis_text, analysis_json, created_at
+           FROM AIProgressAnalysis
+           WHERE student_id = ? AND class_id = ?
+           ORDER BY created_at DESC LIMIT 1''',
+        (student_id, class_id)
+    ).fetchone()
+
+    # Lade die letzten 5 Hausaufgaben (MC + Open)
+    mc_results = conn.execute(
+        '''SELECT HomeworkResults.homework_id, date_submitted, percent_correct, new_class_skill_level, Homework.title, Homework.is_team_challenge
+           FROM HomeworkResults
+           JOIN Homework ON HomeworkResults.homework_id = Homework.id
+           WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
+           ORDER BY date_submitted DESC LIMIT 5''',
+        (student_id, class_id)
+    ).fetchall()
+    open_results = conn.execute(
+        '''SELECT HomeworkOpenQuestionsResults.homework_id, date_submitted, percent_correct, new_class_skill_level, Homework.title, Homework.is_team_challenge
+           FROM HomeworkOpenQuestionsResults
+           JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+           WHERE HomeworkOpenQuestionsResults.student_id = ? AND Homework.class_id = ?
+           ORDER BY date_submitted DESC LIMIT 5''',
+        (student_id, class_id)
+    ).fetchall()
+    # Kombiniere und sortiere nach Datum, nimm die letzten 5 insgesamt
+    all_results = list(mc_results) + list(open_results)
+    all_results.sort(key=lambda r: r['date_submitted'], reverse=True)
+    last_results = all_results[:5]
+
+    # Markdown zu HTML für die Analyse (damit Überschriften, Listen etc. korrekt angezeigt werden)
+    analysis_html = ""
+    if analysis and analysis['analysis_text']:
+        analysis_html = markdown.markdown(analysis['analysis_text'])
+
+    conn.close()
+    return render_template(
+        'ai_progress_analysis.html',
+        analysis=analysis,
+        analysis_html=analysis_html,
+        last_results=last_results,
+        student_id=student_id,
+        class_id=class_id
+    )
+
+@app.route('/ai_progress_analysis/<int:student_id>/<int:class_id>/generate', methods=['POST', 'GET'])
+def generate_ai_progress_analysis(student_id, class_id):
+    import json
+    import os
+    import requests
+    from datetime import datetime
+    from flask import redirect, url_for, request
+
+    # Bei GET einfach auf die Analyse-Seite weiterleiten
+    if request.method == 'GET':
+        return redirect(url_for('ai_progress_analysis', student_id=student_id, class_id=class_id))
+
+    conn = get_db_connection()
+
+    # Hole die letzten 5 bearbeiteten Hausaufgaben (egal ob MC oder Open, nur wenn Ergebnis existiert)
+    mc_results = conn.execute(
+        '''SELECT HomeworkResults.homework_id, date_submitted, percent_correct, new_class_skill_level, Homework.title, Homework.is_team_challenge
+           FROM HomeworkResults
+           JOIN Homework ON HomeworkResults.homework_id = Homework.id
+           WHERE HomeworkResults.student_id = ? AND Homework.class_id = ?
+           ORDER BY date_submitted DESC''',
+        (student_id, class_id)
+    ).fetchall()
+    open_results = conn.execute(
+        '''SELECT HomeworkOpenQuestionsResults.homework_id, date_submitted, percent_correct, new_class_skill_level, Homework.title, Homework.is_team_challenge
+           FROM HomeworkOpenQuestionsResults
+           JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+           WHERE HomeworkOpenQuestionsResults.student_id = ? AND Homework.class_id = ?
+           ORDER BY date_submitted DESC''',
+        (student_id, class_id)
+    ).fetchall()
+    # Kombiniere und sortiere nach Datum, nimm die letzten 5 insgesamt (nur bearbeitete!)
+    all_results = list(mc_results) + list(open_results)
+    all_results.sort(key=lambda r: r['date_submitted'], reverse=True)
+    # Nur die letzten 5 bearbeiteten Hausaufgaben
+    last_results = all_results[:5]
+
+    class_info = conn.execute(
+        'SELECT subject, grade_level FROM Classes WHERE id = ?',
+        (class_id,)
+    ).fetchone()
+    subject = class_info['subject'] if class_info else ''
+    grade_level = class_info['grade_level'] if class_info else ''
+
+    progress_data = []
+    for r in last_results:
+        homework_id = r['homework_id']
+
+        # Hole das damals verwendete Skill Level (answered_skill_level)
+        result = conn.execute(
+            'SELECT answered_skill_level FROM HomeworkResults WHERE homework_id = ? AND student_id = ? ORDER BY date_submitted DESC LIMIT 1',
+            (homework_id, student_id)
+        ).fetchone()
+        if not result or result['answered_skill_level'] is None:
+            result = conn.execute(
+                'SELECT answered_skill_level FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND student_id = ? ORDER BY date_submitted DESC LIMIT 1',
+                (homework_id, student_id)
+            ).fetchone()
+        answered_skill_level = result['answered_skill_level'] if result and result['answered_skill_level'] is not None else 1
+
+        # MC-Fragen: Nur die, die der Schüler damals bekommen hat
+        mc_questions = []
+        mc_rows = conn.execute(
+            '''SELECT q.question, q.options, q.correct_answer, q.explanation, q.taxonomy, q.skill_level, res.selected_answers
+               FROM HomeworkQuestions q
+               JOIN HomeworkResults res ON q.homework_id = res.homework_id AND res.student_id = ?
+               WHERE q.homework_id = ? AND q.skill_level = ?
+               ORDER BY q.id ASC LIMIT 10''',
+            (student_id, homework_id, answered_skill_level)
+        ).fetchall()
+        selected_answers = {}
+        if mc_rows and mc_rows[0]['selected_answers']:
+            try:
+                selected_answers = json.loads(mc_rows[0]['selected_answers'])
+            except Exception:
+                selected_answers = {}
+        for idx, q in enumerate(mc_rows):
+            options = json.loads(q['options'])
+            student_answer = selected_answers.get(str(idx)) if selected_answers else None
+            mc_questions.append({
+                "question": q['question'],
+                "options": options,
+                "correct_answer": q['correct_answer'],
+                "student_answer": student_answer,
+                "explanation": q['explanation'],
+                "taxonomy": q['taxonomy'],
+                "is_correct": (str(q['correct_answer']) == str(student_answer)) if student_answer is not None else None
+            })
+
+        # Open Questions: Nur die, die der Schüler damals bekommen hat
+        open_questions = []
+        oq_rows = conn.execute(
+            '''SELECT oq.id, oq.question, oq.sample_solution, oq.taxonomy, ans.answer
+               FROM HomeworkOpenQuestions oq
+               LEFT JOIN HomeworkOpenAnswers ans ON oq.id = ans.open_question_id AND ans.student_id = ? AND ans.homework_id = ?
+               WHERE oq.homework_id = ? AND oq.skill_level = ?
+               ORDER BY oq.id ASC LIMIT 6''',
+            (student_id, homework_id, homework_id, answered_skill_level)
+        ).fetchall()
+        feedback_row = conn.execute(
+            '''SELECT feedback_json FROM HomeworkOpenQuestionsResults WHERE homework_id = ? AND student_id = ?''',
+            (homework_id, student_id)
+        ).fetchone()
+        feedback_json = json.loads(feedback_row['feedback_json']) if feedback_row and feedback_row['feedback_json'] else {}
+
+        for oq in oq_rows:
+            feedback = feedback_json.get(str(oq['id']), {})
+            open_questions.append({
+                "question": oq['question'],
+                "sample_solution": oq['sample_solution'],
+                "taxonomy": oq['taxonomy'],
+                "student_answer": oq['answer'],
+                "ai_feedback": feedback.get("result"),
+                "is_correct": feedback.get("is_correct")
+            })
+
+        progress_data.append({
+            "date": r['date_submitted'],
+            "title": r['title'],
+            "percent_correct": r['percent_correct'],
+            "skill_level": r['new_class_skill_level'],
+            "is_team_challenge": r['is_team_challenge'],
+            "mc_questions": mc_questions,
+            "open_questions": open_questions
+        })
+
+    prompt = f"""
+You are an AI sidekick for a student. Analyze your student's last homework results in the subject "{subject}" (grade {grade_level}).
+Always refer to each homework by its title when you mention it.
+Whenever you talk about improvement or decline, always give concrete numbers (e.g., percent correct, skill level, number of correct/incorrect answers).
+For each homework, you get all questions, the correct answers, and the student's answers.
+For open questions, you also get the AI-generated feedback and whether the answer was correct.
+
+Your task:
+- Identify progress, problems, recurring mistakes, or topics where the student has difficulties.
+- Give motivating but honest feedback and concrete tips.
+- Refer to the last assignments and state whether the student is making progress, stagnating, or having problems, always using numbers.
+- If you notice patterns (e.g., always mistakes in certain topics or task types), mention them and use the homework titles for reference.
+- Speak directly to the student as their personal AI sidekick.
+
+Structure your answer in:
+- Summary of learning progress (with numbers and homework titles)
+- Notable patterns/problems (with numbers and homework titles)
+- Concrete tips for next steps
+
+Here are the last assignments (including all questions and answers):
+{json.dumps(progress_data, ensure_ascii=False, indent=2)}
+Reply with a text for the student.
+"""
+
+    print("=== Prompt an ChatGPT ===")
+    print(prompt)
+    print("========================")
+
+    # OpenAI API-Aufruf wie gehabt...
+    api_key = os.getenv("CHATGPT_API_KEY")
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data_api = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
+    response = requests.post(url, headers=headers, json=data_api)
+    if response.status_code == 200:
+        result = response.json()
+        generated_content = result["choices"][0]["message"]["content"]
+        analysis_text = generated_content.strip()
+        analysis_json = json.dumps(progress_data)
+        created_at = datetime.now().isoformat()
+        # Speichern
+        conn.execute(
+            '''INSERT INTO AIProgressAnalysis (student_id, class_id, analysis_text, analysis_json, created_at)
+               VALUES (?, ?, ?, ?, ?)''',
+            (student_id, class_id, analysis_text, analysis_json, created_at)
+        )
+        conn.commit()
+        conn.close()
+        # Nach dem Generieren: Redirect auf die Analyse-Seite
+        return redirect(url_for('ai_progress_analysis', student_id=student_id, class_id=class_id))
+    else:
+        conn.close()
+        return redirect(url_for('ai_progress_analysis', student_id=student_id, class_id=class_id))
+
 ### Aufgabenerstellung ###
 
 
