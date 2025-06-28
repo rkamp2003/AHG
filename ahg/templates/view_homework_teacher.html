@@ -17,7 +17,68 @@
             <button type="submit" class="submit-button danger no-background">Delete Homework</button>
         </form>
     </div>
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 10%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
 
+    <!-- Help Popup -->
+    <div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:540px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">
+                Explanation<br>Homework (Teacher View)
+            </h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+                <div style="font-weight:bold; margin-top:12px;">Overview</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>This page shows all questions and statistics for the selected homework assignment.</li>
+                    <li>At the top, you see how many students have completed the homework, broken down by skill level groups.</li>
+                </ul>
+                {% if questions and questions|length > 0 %}
+                    <div style="font-weight:bold; margin-top:12px;">Multiple Choice Questions</div>
+                    <ul style="margin-left:22px; margin-bottom:10px;">
+                        <li>All multiple choice questions are displayed with their answer options.</li>
+                        <li>
+                            <b>Skill Level</b> next to each question shows which students (by skill level) received this question.
+                        </li>
+                        <li>
+                            Under each question, you see how many students answered it, and the percentage of correct and incorrect answers.
+                        </li>
+                        <li>
+                            You can use the "Check" button to simulate answering the homework as a student and see the correct answers and explanations.
+                        </li>
+                    </ul>
+                {% endif %}
+                {% if open_questions and open_questions|length > 0 %}
+                    <div style="font-weight:bold; margin-top:12px;">Open Questions</div>
+                    <ul style="margin-left:22px; margin-bottom:10px;">
+                        <li>All open-ended questions are displayed with their sample solutions.</li>
+                        <li>
+                            <b>Skill Level</b> next to each question shows which students (by skill level) received this question.
+                        </li>
+                        <li>
+                            Under each question, you see how many students answered it, and the percentage of correct and incorrect answers.
+                        </li>
+                        <li>
+                            The sample solution is used by the AI to automatically evaluate student answers.
+                        </li>
+                    </ul>
+                {% endif %}
+                <div style="font-weight:bold; margin-top:12px;">Actions</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Use <b>Edit Homework</b> to change questions or answers.</li>
+                    <li>Use <b>Delete Homework</b> to remove this assignment from the class.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
     <div style="max-width:600px;margin:32px auto 24px auto;padding:20px 28px;background:#f5faff;border-radius:14px;box-shadow:0 2px 12px rgba(80,120,200,0.09);text-align:center;">
         <div style="font-size:1.15em;margin-bottom:6px;">
             <b>{{ num_done }}</b> out of <b>{{ total_students }}</b> students have completed this homework.
@@ -59,16 +120,15 @@
                                 {% endif %}
                             )</em>
                         </div>
-                        <ul>
+                        <div style="margin-bottom: 10px; text-align: center;">
                             {% for option in question['options'] %}
-                                <li>
-                                    <label>
+                                <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: center;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                         <input type="radio" name="answer_{{ question.index }}" value="{{ option.index }}">
-                                        {{ option.option }}
+                                        <span>{{ option.option }}</span>
                                     </label>
-                                </li>
+                                </div>
                             {% endfor %}
-                        </ul>
                         <span id="result_{{ question.index }}"></span>
                         <!-- STATISTIKEN DIREKT UNTER DER FRAGE -->
                         {% for stat in question_stats %}
@@ -175,6 +235,13 @@
                 }
             }
         }
+
+        document.addEventListener('mousedown', function(event) {
+            const modal = document.getElementById('help-modal');
+            if (modal && modal.style.display === 'flex' && event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>

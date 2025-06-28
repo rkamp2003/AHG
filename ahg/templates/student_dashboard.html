@@ -156,6 +156,79 @@
         {% endfor %}
     </div>
 
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+    <!-- Help Popup -->
+<div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+    <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:540px; max-height:85vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+        <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+            style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+        <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">
+            Explanation<br>Student Dashboard
+        </h2>
+        <div style="font-size:1.08em; color:#333; text-align:left;">
+            <div style="font-weight:bold; margin-top:12px;">Your Information & Skill Level System</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>
+                    The platform uses a skill level system to make sure you get tasks that match your abilities.
+                </li>
+                <li>
+                    Your <b>overall skill level</b> is the average of your skill levels in all your classes.
+                </li>
+                <li>
+                    In the class list, the <b>Class Skill Level</b> shows your skill level for that specific class.
+                </li>
+                <li>
+                    As you solve tasks correctly, your skill level increases. If you answer many questions incorrectly, your skill level can also decrease.
+                </li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Your Courses</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>Lists all classes you are currently enrolled in.</li>
+                <li>Click on a class to see more details, assignments, and your progress in that class.</li>
+                <li>The "Class Skill Level" is your skill level in that class only.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Gamification</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>You earn points for completing homework and for retrying assignments.</li>
+                <li>With these points, you can level up and unlock badges.</li>
+                <li>Leveling up and earning badges is meant to motivate you and make learning more fun.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Badges</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>You can earn different badges for completing homework, reaching new levels, or working in teams.</li>
+                <li>You can select up to 3 favorite badges to display on your profile.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Favorite Badges</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>Choose your favorite badges to show them to your Class Members. Only badges you have already earned can be selected.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Badges Progress</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>See all badges you have earned and which ones you can unlock next.</li>
+                <li>Click "Show next badges" to see locked badges and what you need to do to unlock them.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Skill Level Progress Chart</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>The chart shows how your overall skill level has changed over time, based on your homework results in all classes.</li>
+                <li>Hover over the points to see which homework and class contributed to your progress.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Join a Class</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>Use the search bar to find and join new classes. Start typing to see suggestions and select the class you want to join.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
     <script>
     document.querySelectorAll('.show-locked-btn').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -349,6 +422,13 @@ window.addEventListener('DOMContentLoaded', function() {
         document.body.appendChild(modal);
     }
 });
+
+    document.addEventListener('mousedown', function(event) {
+        const modal = document.getElementById('help-modal');
+        if (modal && modal.style.display === 'flex' && event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
 </script>
 {% endif %}
 </body>

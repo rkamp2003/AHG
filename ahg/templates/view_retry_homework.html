@@ -7,7 +7,11 @@
 </head>
 <body>
     <div class="top-buttons" style="display: flex; justify-content: flex-start;">
-        <a href="/homework/{{ retry['homework_id'] }}/{{ student_id }}" class="button">Back to Homework</a>
+        {% if teacher_view %}
+            <a href="/homework/{{ retry['homework_id'] }}/{{ student_id }}?teacher_view=1&teacher_id={{ teacher_id }}" class="button">Back to Homework</a>
+        {% else %}
+            <a href="/homework/{{ retry['homework_id'] }}/{{ student_id }}" class="button">Back to Homework</a>
+        {% endif %}
     </div>
 
 
@@ -17,42 +21,58 @@
         <p>Created: {{ retry['date_created'][:16].replace('T', ' ') }}</p>
         <br>
         <ol>
-            {% for question in questions %}
-                <li>
-                    <p>{{ question.question }}</p>
-                    <div style="color:#666;"><em>({{ question.taxonomy }})</em></div>
-                    <br>
-                    <ul>
-                        {% for option in question.options %}
-                            <li>
-                                <label>
+        {% for question in questions %}
+            <li>
+                <div style="margin-bottom: 18px;">
+                    <div style="font-weight: bold; margin-bottom: 4px;">
+                        {{ question['question'] }}
+                    </div>
+                    <div style="color: #aaa; font-size: 0.98em; margin-bottom: 8px;">
+                        ({{ question['taxonomy'] }})
+                    </div>
+                    <div style="margin-bottom: 10px; text-align: center;">
+                        {% for option in question['options'] %}
+                            <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: center;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                     <input type="radio"
-                                           name="answer_{{ question.index }}"
-                                           value="{{ option.index }}"
-                                           {% if selected_answers[question.index|string] is defined and selected_answers[question.index|string] == option.index %}checked{% endif %}
-                                           {% if selected_answers %}disabled{% endif %}>
-                                    {{ option.option }}
+                                        name="answer_{{ question.index }}"
+                                        value="{{ option.index }}"
+                                        style="margin:0;"
+                                        {% if selected_answers[question.index|string] is defined and selected_answers[question.index|string] == option.index %}checked{% endif %}
+                                        {% if selected_answers %}disabled{% endif %}>
+                                    <span>{{ option.option }}</span>
                                 </label>
-                            </li>
+                            </div>
                         {% endfor %}
-                    </ul>
+                    </div>
                     <span id="result_{{ question.index }}"></span>
-                </li>
-            {% endfor %}
+                </div>
+            </li>
+        {% endfor %}
         </ol>
         <button id="check-button" type="button" onclick="checkRetryAnswers()">Check</button>
     </form>
 
     <div id="mc-retry-feedback" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:500px; display:none;"></div>
     {% if mc_feedback_summary %}
-        <div class="mc-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:500px;">
-            <h3>Retry Results</h3>
-            <div style="margin-top:10px;">
-                <b>Correct:</b> {{ mc_correct_count }}<br>
-                <b>Incorrect:</b> {{ mc_incorrect_count }}<br>
-                <b>Summary:</b> {{ mc_feedback_summary }}<br>
-                <b>Recommendation:</b> {{ mc_feedback_recommendation }}
+        <div class="mc-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:700px; position:relative;">
+            <!-- Feedback Content mittig, aber Text linksbündig -->
+            <div style="max-width:420px; margin:0 auto; text-align:left;">
+                <h3 style="margin-top:0;">Multiple Choice Results</h3>
+                <div style="margin-top:10px;">
+                    <b>Correct:</b> {{ mc_correct_count }}<br>
+                    <b>Incorrect:</b> {{ mc_incorrect_count }}<br>
+                    <b>Summary:</b> <span style="font-style:italic; color:#222;">"{{ mc_feedback_summary }}"</span><br>
+                    <b>Recommendation:</b> <span style="font-style:italic; color:#222;">"{{ mc_feedback_recommendation }}"</span>
+                    <br>
+                    <span style="color:#d32f2f; font-size:0.98em; font-weight:bold; display:block; margin-top:12px;">
+                        &#9888; This feedback was generated by an AI and may not always be 100% accurate. Please use it as a helpful guide, but do not rely on it alone.  &#9888;
+                    </span>
+                </div>
             </div>
+            <!-- AI Sidekick Image absolut rechts -->
+            <img src="{{ url_for('static', filename='ai_sidekick.png') }}" alt="AI Sidekick"
+                style="position:absolute; top:50%; right:-90px; transform:translateY(-50%); width:210px; height:210px; border-radius:50%;">
         </div>
     {% endif %}
     
@@ -93,13 +113,13 @@
                 const explanation = questions[i].explanation;
 
                 if (userAnswer === undefined) {
-                    resultSpan.innerHTML = `<span style="color:red;">❌ No answer selected. Correct: ${correctOption}. Explanation: ${explanation}</span>`;
+                    resultSpan.innerHTML = `<span style="color:red;">❌ No answer selected. <br> Correct answer: ${correctOption}. Explanation: ${explanation}</span>`;
                     incorrectCount++;
                 } else if (userAnswer === correctAnswer) {
-                    resultSpan.innerHTML = `<span style="color:green;">✔️ Correct! ${correctOption}. Explanation: ${explanation}</span>`;
+                    resultSpan.innerHTML = `<span style="color:green;">✔️ Correct! <br> Explanation: ${explanation}</span>`;
                     correctCount++;
                 } else {
-                    resultSpan.innerHTML = `<span style="color:red;">❌ Wrong! Correct: ${correctOption}. Explanation: ${explanation}</span>`;
+                    resultSpan.innerHTML = `<span style="color:red;">❌ Wrong! <br> Correct answer: ${correctOption}. <br> Explanation: ${explanation}</span>`;
                     incorrectCount++;
                 }
             }

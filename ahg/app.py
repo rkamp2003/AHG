@@ -7,6 +7,7 @@ import os
 import openai
 import requests
 from werkzeug.datastructures import MultiDict
+from datetime import datetime, timedelta
 
 
 app = Flask(__name__)
@@ -112,7 +113,7 @@ def class_details_teacher(class_id, teacher_id):
     # Klasseninformationen abrufen
     class_info = conn.execute(
         '''
-        SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name
+        SELECT Classes.id, Classes.class_name, Classes.subject, Classes.grade_level, Teachers.name AS teacher_name
         FROM Classes
         JOIN Teachers ON Classes.teacher_id = Teachers.id
         WHERE Classes.id = ? AND teacher_id = ?
@@ -308,7 +309,7 @@ def class_details_teacher(class_id, teacher_id):
         team_challenges=team_challenges,
         dates=dates,
         titles=titles,
-        avg_percent_corrects=avg_percent_corrects,  # <- das ist die richtige Liste!
+        avg_percent_corrects=avg_percent_corrects,
         avg_skill_levels=avg_skill_levels,
         total_homework_per_student=total_homework_per_student,
         completed_homework_per_student=completed_homework_per_student
@@ -420,6 +421,123 @@ def student_details(student_id, class_id, teacher_id):
         skill_levels.append(r['new_class_skill_level'])
         titles.append(r['title'])
 
+    # Durchschnitt berechnen (nur Werte, die nicht None sind)
+    valid_percents = [p for p in percent_corrects if p is not None]
+    if valid_percents:
+        average_correct_percent = round(sum(valid_percents) / len(valid_percents), 2)
+    else:
+        average_correct_percent = 0.0
+
+    student_skill_level = conn.execute(
+        '''
+        SELECT class_skill_level FROM ClassMembers
+        WHERE student_id = ? AND class_id = ?
+        ''', (student_id, class_id)
+    ).fetchone()
+
+    student_skill_level = student_skill_level['class_skill_level'] if student_skill_level else 5
+
+    # Berechne erledigte und gesamte Aufgaben (wie in class_details_teacher)
+    total_homework = conn.execute(
+        '''
+        SELECT COUNT(*) FROM Homework
+        WHERE class_id = ? AND is_team_challenge = 0 AND status = 'published'
+        ''', (class_id,)
+    ).fetchone()[0]
+    total_team = conn.execute(
+        '''
+        SELECT COUNT(*) FROM Homework
+        WHERE class_id = ? AND is_team_challenge = 1 AND status = 'published'
+        ''', (class_id,)
+    ).fetchone()[0]
+    total_tasks = total_homework + total_team
+
+    completed_mc = conn.execute(
+        '''
+        SELECT COUNT(*) FROM HomeworkResults
+        JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        WHERE Homework.class_id = ? AND HomeworkResults.student_id = ?
+        ''', (class_id, student_id)
+    ).fetchone()[0]
+    completed_open = conn.execute(
+        '''
+        SELECT COUNT(*) FROM HomeworkOpenQuestionsResults
+        JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+        WHERE Homework.class_id = ? AND HomeworkOpenQuestionsResults.student_id = ?
+        ''', (class_id, student_id)
+    ).fetchone()[0]
+    completed_team_mc = conn.execute(
+        '''
+        SELECT COUNT(*) FROM HomeworkResults
+        JOIN Homework ON HomeworkResults.homework_id = Homework.id
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 1 AND HomeworkResults.student_id = ?
+        ''', (class_id, student_id)
+    ).fetchone()[0]
+    completed_team_open = conn.execute(
+        '''
+        SELECT COUNT(*) FROM HomeworkOpenQuestionsResults
+        JOIN Homework ON HomeworkOpenQuestionsResults.homework_id = Homework.id
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 1 AND HomeworkOpenQuestionsResults.student_id = ?
+        ''', (class_id, student_id)
+    ).fetchone()[0]
+
+    completed = completed_mc + completed_open + completed_team_mc + completed_team_open
+
+    # At risk Logik wie im Teacher-View
+    if student_skill_level <= 3 and (total_tasks > 0 and completed / total_tasks < 0.5):
+        at_risk = True
+    else:
+        at_risk = False
+
+    # Alle normalen Hausaufgaben dieser Klasse
+    homework_list = conn.execute(
+        '''
+        SELECT Homework.id, Homework.title, Homework.date_created,
+            CASE 
+                WHEN EXISTS (
+                    SELECT 1 FROM HomeworkResults
+                    WHERE HomeworkResults.homework_id = Homework.id
+                    AND HomeworkResults.student_id = ?
+                )
+                OR EXISTS (
+                    SELECT 1 FROM HomeworkOpenQuestionsResults
+                    WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+                    AND HomeworkOpenQuestionsResults.student_id = ?
+                )
+                THEN 'Done'
+                ELSE 'Open'
+            END AS status
+        FROM Homework
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 0 AND Homework.status = 'published'
+        ''',
+        (student_id, student_id, class_id)
+    ).fetchall()
+
+    # Alle Team Challenges dieser Klasse
+    team_challenges = conn.execute(
+        '''
+        SELECT Homework.id, Homework.title, Homework.date_created,
+            CASE 
+                WHEN EXISTS (
+                    SELECT 1 FROM HomeworkResults
+                    WHERE HomeworkResults.homework_id = Homework.id
+                    AND HomeworkResults.student_id = ?
+                )
+                OR EXISTS (
+                    SELECT 1 FROM HomeworkOpenQuestionsResults
+                    WHERE HomeworkOpenQuestionsResults.homework_id = Homework.id
+                    AND HomeworkOpenQuestionsResults.student_id = ?
+                )
+                THEN 'Done'
+                ELSE 'Open'
+            END AS status
+        FROM Homework
+        WHERE Homework.class_id = ? AND Homework.is_team_challenge = 1 AND Homework.status = 'published'
+        ''',
+        (student_id, student_id, class_id)
+    ).fetchall()
+
+
     conn.close()
 
     return render_template(
@@ -431,9 +549,117 @@ def student_details(student_id, class_id, teacher_id):
         titles=titles,
         percent_corrects=percent_corrects,
         skill_dates=dates,
-        skill_levels=skill_levels
+        skill_levels=skill_levels,
+        average_correct_percent=average_correct_percent,
+        homework_list=homework_list,
+        team_challenges=team_challenges,
+        show_homework_list_for_teacher=at_risk
     )
 
+
+@app.route('/task_archive')
+def task_archive():
+    conn = get_db_connection()
+    tasks = conn.execute(
+        '''
+        SELECT Homework.id, Homework.title, Homework.description, Homework.date_created, 
+            Classes.subject, Classes.grade_level, Homework.class_id, Classes.teacher_id, Teachers.name AS teacher_name
+        FROM Homework
+        JOIN Classes ON Homework.class_id = Classes.id
+        JOIN Teachers ON Classes.teacher_id = Teachers.id
+        ORDER BY Homework.date_created DESC
+        '''
+    ).fetchall()
+
+
+    # Für jede Aufgabe bestimmen, ob MC, Open oder Mixed
+    task_list = []
+    for task in tasks:
+        mc_count = conn.execute(
+            'SELECT COUNT(*) FROM HomeworkQuestions WHERE homework_id = ?', (task['id'],)
+        ).fetchone()[0]
+        open_count = conn.execute(
+            'SELECT COUNT(*) FROM HomeworkOpenQuestions WHERE homework_id = ?', (task['id'],)
+        ).fetchone()[0]
+        if mc_count > 0 and open_count > 0:
+            ha_type = "Mixed"
+        elif mc_count > 0:
+            ha_type = "MC"
+        elif open_count > 0:
+            ha_type = "Open"
+        else:
+            ha_type = "None"
+        task_list.append({
+            'id': task['id'],
+            'title': task['title'],
+            'description': task['description'],
+            'date_created': task['date_created'],
+            'subject': task['subject'],
+            'grade_level': task['grade_level'],
+            'ha_type': ha_type,
+            'class_id': task['class_id'],
+            'teacher_id': task['teacher_id'],
+            'teacher_name': task['teacher_name']
+        })
+    conn.close()
+    return render_template('task_archive.html', tasks=task_list)
+
+
+@app.route('/use_homework_in_class/<int:homework_id>', methods=['POST'])
+def use_homework_in_class(homework_id):
+    class_id = request.form['class_id']
+    is_team_challenge = 1 if 'is_team_challenge' in request.form else 0
+    status = 'draft' if 'save' in request.form else 'published'
+    conn = get_db_connection()
+    # Kopiere die Aufgabe (inkl. Fragen) in die gewählte Klasse
+    orig = conn.execute('SELECT * FROM Homework WHERE id = ?', (homework_id,)).fetchone()
+    conn.execute(
+        '''INSERT INTO Homework (title, description, class_id, date_created, status, is_team_challenge)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)''',
+        (orig['title'], orig['description'], class_id, status, is_team_challenge)
+    )
+    new_homework_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+    # Kopiere MC-Fragen
+    for q in conn.execute('SELECT * FROM HomeworkQuestions WHERE homework_id = ?', (homework_id,)):
+        conn.execute(
+            '''INSERT INTO HomeworkQuestions (homework_id, question, options, correct_answer, explanation, taxonomy, skill_level)
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (new_homework_id, q['question'], q['options'], q['correct_answer'], q['explanation'], q['taxonomy'], q['skill_level'])
+        )
+    # Kopiere Open-Fragen
+    for oq in conn.execute('SELECT * FROM HomeworkOpenQuestions WHERE homework_id = ?', (homework_id,)):
+        conn.execute(
+            '''INSERT INTO HomeworkOpenQuestions (homework_id, question, sample_solution, taxonomy, skill_level)
+               VALUES (?, ?, ?, ?, ?)''',
+            (new_homework_id, oq['question'], oq['sample_solution'], oq['taxonomy'], oq['skill_level'])
+        )
+    if is_team_challenge:
+        conn.execute(
+            '''INSERT INTO TeamChallenges (homework_id, start_time, end_time, goal_score, current_score)
+            VALUES (?, ?, ?, ?, 0)''',
+            (new_homework_id, request.form.get('start_time'), request.form.get('end_time'), request.form.get('points'))
+        )
+    # Hole teacher_id der Zielklasse
+    teacher_id = conn.execute(
+        'SELECT teacher_id FROM Classes WHERE id = ?', (class_id,)
+    ).fetchone()['teacher_id']
+    conn.commit()
+    conn.close()
+    return redirect(url_for('edit_homework', class_id=class_id, teacher_id=teacher_id, homework_id=new_homework_id))
+
+from flask import request, jsonify
+import PyPDF2
+
+@app.route('/extract_pdf_text', methods=['POST'])
+def extract_pdf_text():
+    file = request.files['pdf']
+    reader = PyPDF2.PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text + "\n"
+    return jsonify({'text': text.strip()})
 
 ### STUDENT ###
 
@@ -911,7 +1137,6 @@ def leave_class():
 
     return redirect(url_for('student_dashboard'))
 
-
 ### Aufgabenerstellung ###
 
 
@@ -1202,14 +1427,20 @@ def view_homework_student(homework_id, student_id):
     import json
     conn = get_db_connection()
 
+    teacher_view = request.args.get('teacher_view', '0') == '1'
+
     # Abrufen der Klasseninformationen
     class_info = conn.execute(
-        'SELECT Classes.id, Classes.class_name, Classes.subject, Teachers.name AS teacher_name '
-        'FROM Classes '
-        'JOIN Teachers ON Classes.teacher_id = Teachers.id '
-        'JOIN Homework ON Classes.id = Homework.class_id '
-        'WHERE Homework.id = ?', (homework_id,)
+        '''
+        SELECT Classes.id, Classes.class_name, Classes.subject, Classes.teacher_id, Teachers.name AS teacher_name
+        FROM Classes
+        JOIN Teachers ON Classes.teacher_id = Teachers.id
+        JOIN Homework ON Classes.id = Homework.class_id
+        WHERE Homework.id = ?
+        ''', (homework_id,)
     ).fetchone()
+
+    teacher_id = class_info['teacher_id']
 
     if not class_info:
         conn.close()
@@ -1408,7 +1639,9 @@ def view_homework_student(homework_id, student_id):
         mc_correct_count=mc_correct_count,
         mc_incorrect_count=mc_incorrect_count,
         mc_feedback_summary=mc_feedback_summary,
-        mc_feedback_recommendation=mc_feedback_recommendation
+        teacher_view=teacher_view,
+        mc_feedback_recommendation=mc_feedback_recommendation,
+        teacher_id=teacher_id
     )
 
 @app.route('/retry_homework_view/<int:retry_id>/<int:student_id>')
@@ -1418,6 +1651,9 @@ def retry_homework_view(retry_id, student_id):
     if not retry:
         conn.close()
         return "Retry homework not found", 404
+    
+    teacher_view = request.args.get('teacher_view', '0') == '1'
+    teacher_id = request.args.get('teacher_id', None)
 
     retry_type = retry['retry_type'] if 'retry_type' in retry.keys() else 'mc'
 
@@ -1457,6 +1693,8 @@ def retry_homework_view(retry_id, student_id):
             questions=questions,
             student_id=student_id,
             openq_answers=openq_answers,
+            teacher_view=teacher_view,
+            teacher_id=teacher_id,
             openq_feedback=openq_feedback
         )
     elif retry_type == 'mc':
@@ -1490,6 +1728,8 @@ def retry_homework_view(retry_id, student_id):
             mc_feedback_summary=mc_feedback_summary,
             mc_feedback_recommendation=mc_feedback_recommendation,
             mc_correct_count=mc_correct_count,
+            teacher_view=teacher_view,
+            teacher_id=teacher_id,
             mc_incorrect_count=mc_incorrect_count
         )
     else:
@@ -2480,6 +2720,24 @@ def edit_homework(homework_id, class_id, teacher_id):
     import json
     conn = get_db_connection()
 
+    from_archive = request.args.get('from_archive')
+    teacher_classes = []
+    if from_archive:
+        teacher_id = conn.execute(
+            '''
+            SELECT Classes.teacher_id
+            FROM Homework
+            JOIN Classes ON Homework.class_id = Classes.id
+            WHERE Homework.id = ?
+            ''', (homework_id,)
+        ).fetchone()['teacher_id']
+        teacher_classes = conn.execute(
+            'SELECT id, class_name, subject, grade_level FROM Classes WHERE teacher_id = ?', (teacher_id,)
+        ).fetchall()
+
+    print(teacher_id)
+    print(teacher_classes)
+
     if request.method == 'POST':
         # Daten aktualisieren
         question_ids = request.form.getlist('question_ids')
@@ -2544,14 +2802,24 @@ def edit_homework(homework_id, class_id, teacher_id):
 
     conn.close()
 
+    default_start_time = datetime.now().strftime('%Y-%m-%dT%H:%M')
+    default_end_time = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
+
+
     # JSON-Modul zur Vorlage übergeben
-    return render_template('edit_homework.html', 
-                           homework=homework, 
-                           questions=questions, 
-                           open_questions=open_questions,  # <-- Hier übergeben
-                           class_id=class_id, 
-                           teacher_id=teacher_id, 
-                           json=json)
+    return render_template(
+        'edit_homework.html', 
+        homework=homework, 
+        questions=questions, 
+        open_questions=open_questions, 
+        class_id=class_id, 
+        teacher_id=teacher_id,
+        teacher_classes=teacher_classes,
+        from_archive=from_archive,
+        default_start_time=default_start_time,
+        default_end_time=default_end_time,
+        json=json
+    )
 
 
 
@@ -2592,6 +2860,15 @@ def retry_homework():
     retry_type = data.get('retry_type', 'mc')
 
     conn = get_db_connection()
+
+    retry_count = conn.execute(
+        'SELECT COUNT(*) FROM HomeworkRetries WHERE homework_id = ? AND student_id = ?',
+        (homework_id, student_id)
+    ).fetchone()[0]
+
+    if retry_count >= 3:
+        conn.close()
+        return jsonify({"message": "Retry homework generated!"}), 200
 
     # Get homework description
     homework = conn.execute('SELECT description, title FROM Homework WHERE id = ?', (homework_id,)).fetchone()
