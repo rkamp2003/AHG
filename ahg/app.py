@@ -1322,16 +1322,12 @@ For each homework, you get all questions, the correct answers, and the student's
 For open questions, you also get the AI-generated feedback and whether the answer was correct.
 
 Your task:
-- Identify progress, problems, recurring mistakes, or topics where the student has difficulties.
-- Give motivating but honest feedback and concrete tips.
-- Refer to the last assignments and state whether the student is making progress, stagnating, or having problems, always using numbers.
-- If you notice patterns (e.g., always mistakes in certain topics or task types), mention them and use the homework titles for reference.
+- Structure your answer in the following four sections:
+  1. **Results of the Last 5 Homeworks:** For each of the last 5 homeworks, summarize the student's result (always mention the title, date, percent correct, and skill level).
+  2. **Notable Patterns/Problems:** Identify recurring mistakes, difficulties, or progress, always using numbers and homework titles.
+  3. **Concrete Tips for Next Steps:** Give actionable, specific advice for improvement.
+  4. **Motivational Words:** End with a motivating, positive message for the student.
 - Speak directly to the student as their personal AI sidekick.
-
-Structure your answer in:
-- Summary of learning progress (with numbers and homework titles)
-- Notable patterns/problems (with numbers and homework titles)
-- Concrete tips for next steps
 
 Here are the last assignments (including all questions and answers):
 {json.dumps(progress_data, ensure_ascii=False, indent=2)}
