@@ -1,5 +1,5 @@
 # AHG
-DSR Project Seminar
+Bachelor Thesis Extension
 
 Requirements in pyproject-toml -> install via poetry or install manually
  ```code
