@@ -6,52 +6,254 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="top-buttons" style="display: flex; justify-content: space-between; align-items: center;">
-        <a href="/class_details_teacher/{{ class_id }}/{{ teacher_id }}" class="button">Back to Class</a>
+    <!-- Top-Button zurück zum Task Archive, wenn aus dem Archiv -->
+    {% if from_archive %}
+        <div class="top-buttons-fixed-left">
+            <a href="{{ url_for('task_archive') }}" class="button">Back to Task Archive</a>
+        </div>
+    {% else %}
+        <div class="top-buttons-fixed-left">
+            <a href="/class_details_teacher/{{ class_id }}/{{ teacher_id }}" class="button">Back to Class</a>
+        </div>
+    {% endif %}
+
+    <h1 style="margin-top:60px;">Edit Homework <br> {{ homework['title'] }}</h1>
+
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
     </div>
 
-    <h1>Edit Homework: {{ homework['title'] }}</h1>
+    <!-- Help Popup -->
+    <div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:520px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">
+                Explanation<br>Edit Homework
+            </h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+{% if from_archive %}
+                <div style="font-weight:bold; margin-top:12px;">Using Edit Homework from the Archive</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>You are viewing a homework assignment from the Task Archive.</li>
+                    <li>To use this homework in your own class, click the <b>Use in my class</b> button at the bottom.</li>
+                    <li>After adding it to your class, you can edit the questions and answers as needed.</li>
+                    <li>You can then save it as a draft (only visible to you) or publish it so your students can work on it.</li>
+                </ul>
+            {% else %}
+                <div style="font-weight:bold; margin-top:12px;">General Information</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        The <b>Skill Level</b> section for each question shows which students (based on their skill level) will receive this question:
+                        <ul style="margin-left:18px;">
+                            <li>Skill Level 1–3: students with class skill level 1–3</li>
+                            <li>Skill Level 4–7: students with class skill level 4–7</li>
+                            <li>Skill Level 8–10: students with class skill level 8–10</li>
+                        </ul>
+                    </li>
+                </ul>
+                {% if questions and questions|length > 0 %}
+                    <div style="font-weight:bold; margin-top:12px;">Multiple Choice Questions</div>
+                    <ul style="margin-left:22px; margin-bottom:10px;">
+                        <li>Here you can edit the multiple choice questions and their answer options.</li>
+                        <li>
+                            <b>Correct Answer (Index):</b> This is <u>zero-based</u>:
+                            <ul style="margin-left:18px;">
+                                <li>0 = first answer is correct</li>
+                                <li>1 = second answer is correct</li>
+                                <li>2 = third answer is correct</li>
+                                <li>3 = fourth answer is correct</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <b>Explanation:</b> Provide a short explanation for the correct answer. This will be shown to students after submission.
+                        </li>
+                    </ul>
+                {% endif %}
+                {% if open_questions and open_questions|length > 0 %}
+                    <div style="font-weight:bold; margin-top:12px;">Open Questions</div>
+                    <ul style="margin-left:22px; margin-bottom:10px;">
+                        <li>Here you can edit open-ended questions and their sample solutions.</li>
+                        <li>
+                            <b>Sample Solution:</b> This will be used to automatically compare and evaluate student answers later.
+                            An AI will decide whether a student's answer is correct or not based on this sample solution.
+                        </li>
+                    </ul>
+                {% endif %}
+                <div style="font-weight:bold; margin-top:12px;">Saving</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Use <b>Save as Draft</b> to save your changes so that only you can see the homework.</li>
+                    <li>Use <b>Save and Publish</b> to make the homework available for your students to work on.</li>
+                </ul>
+            {% endif %}
+            </div>
+        </div>
+    </div>
 
-    <form method="POST">
+    <form method="POST" id="edit-form" style="padding-bottom:90px;">
         <input type="hidden" name="class_id" value="{{ homework['class_id'] }}">
         <input type="hidden" name="teacher_id" value="{{ session['teacher_id'] }}">
 
         {% for question in questions %}
             <fieldset>
                 <legend>Question {{ loop.index }}</legend>
+                <div style="margin-bottom:6px; color:#555;">
+                    <strong>Skill Level:</strong>
+                    {% if question['skill_level'] == 1 %}
+                        1–3
+                    {% elif question['skill_level'] == 4 %}
+                        4–7
+                    {% elif question['skill_level'] == 8 %}
+                        8–10
+                    {% else %}
+                        {{ question['skill_level'] }}
+                    {% endif %}
+                </div>
                 <input type="hidden" name="question_ids" value="{{ question['id'] }}">
                 
                 <label>Question:</label>
-                <input type="text" name="questions" value="{{ question['question'] }}" required>
+                <textarea name="questions" required class="big-input" {% if from_archive %}readonly{% endif %}>{{ question['question'] }}</textarea>
 
                 <label>Answer Options (separated by commas):</label>
-                <input type="text" name="options" value="{{ ', '.join(json.loads(question['options'])) }}" required>
+                <textarea name="options" required class="big-input" {% if from_archive %}readonly{% endif %}>{{ ', '.join(json.loads(question['options'])) }}</textarea>
 
                 <label>Correct Answer (Index):</label>
-                <input type="number" name="correct_answers" value="{{ question['correct_answer'] }}" required>
+                <input type="number" name="correct_answers" value="{{ question['correct_answer'] }}" required class="big-input" {% if from_archive %}readonly{% endif %}>
 
                 <label>Explanation:</label>
-                <textarea name="explanations" required>{{ question['explanation'] }}</textarea>
+                <textarea name="explanations" required class="big-input" {% if from_archive %}readonly{% endif %}>{{ question['explanation'] }}</textarea>
 
                 <label>Question Type:</label>
-                <select name="taxonomies" required>
+                <select name="taxonomies" required {% if from_archive %}disabled{% endif %}>
                     <option value="Remembering" {% if question['taxonomy'] == 'Remembering' %}selected{% endif %}>Remembering</option>
                     <option value="Understanding" {% if question['taxonomy'] == 'Understanding' %}selected{% endif %}>Understanding</option>
                     <option value="Applying" {% if question['taxonomy'] == 'Applying' %}selected{% endif %}>Applying</option>
                     <option value="Analyzing" {% if question['taxonomy'] == 'Analyzing' %}selected{% endif %}>Analyzing</option>
                 </select>
-
-                <label>Difficulty Level:</label>
-                <select name="skill_levels" required>
-                    <option value="1" {% if question['skill_level'] == 1 %}selected{% endif %}>1</option>
-                    <option value="4" {% if question['skill_level'] == 4 %}selected{% endif %}>4</option>
-                    <option value="8" {% if question['skill_level'] == 8 %}selected{% endif %}>8</option>
-                </select>
+                <input type="hidden" name="skill_levels" value="{{ question['skill_level'] }}">
             </fieldset>
         {% endfor %}
 
-        <button type="submit" name="save" class="submit-button">Save as Draft</button>
-        <button type="submit" name="publish" class="submit-button">Save and Publish</button>
+        {% if open_questions %}
+            <h2 style="margin-top:40px;">Open Questions</h2>
+            {% for oq in open_questions %}
+                <fieldset>
+                    <legend>Open Question {{ loop.index }}</legend>
+                    <div style="margin-bottom:6px; color:#555;">
+                        <strong>Skill Level:</strong>
+                        {% if oq['skill_level'] == 1 %}
+                            1–3
+                        {% elif oq['skill_level'] == 4 %}
+                            4–7
+                        {% elif oq['skill_level'] == 8 %}
+                            8–10
+                        {% else %}
+                            {{ oq['skill_level'] }}
+                        {% endif %}
+                    </div>
+                    <input type="hidden" name="open_question_ids" value="{{ oq['id'] }}">
+                    
+                    <label>Question:</label>
+                    <textarea name="open_questions" required class="big-input" {% if from_archive %}readonly{% endif %}>{{ oq['question'] }}</textarea>
+                    
+                    <label>Sample Solution:</label>
+                    <textarea name="sample_solutions" required class="big-input" {% if from_archive %}readonly{% endif %}>{{ oq['sample_solution'] }}</textarea>
+                    
+                    <label>Taxonomy:</label>
+                    <select name="open_taxonomies" required {% if from_archive %}disabled{% endif %}>
+                        <option value="Remembering" {% if oq['taxonomy'] == 'Remembering' %}selected{% endif %}>Remembering</option>
+                        <option value="Understanding" {% if oq['taxonomy'] == 'Understanding' %}selected{% endif %}>Understanding</option>
+                        <option value="Applying" {% if oq['taxonomy'] == 'Applying' %}selected{% endif %}>Applying</option>
+                        <option value="Analysing" {% if oq['taxonomy'] == 'Analysing' %}selected{% endif %}>Analysing</option>
+                        <option value="Evaluating" {% if oq['taxonomy'] == 'Evaluating' %}selected{% endif %}>Evaluating</option>
+                        <option value="Creating" {% if oq['taxonomy'] == 'Creating' %}selected{% endif %}>Creating</option>
+                    </select>
+                </fieldset>
+            {% endfor %}
+        {% endif %}
     </form>
+
+    {% if from_archive %}
+        <div class="bottom-buttons-fixed">
+            <button type="button" class="submit-button" onclick="openUseInClassModal()">Use in my class</button>
+        </div>
+        <!-- Use in my class Modal -->
+        <div id="useInClassModal" class="modal" style="display:none;">
+            <div class="modal-content" style="max-width:420px; margin: 10% auto; border-radius: 12px; box-shadow: 0 2px 16px rgba(80,80,160,0.13); background: #fff; padding: 24px 32px 18px 32px; position: relative;">
+                <span class="close" onclick="closeUseInClassModal()" style="position: absolute; right: 18px; top: 12px; font-size: 2em; color: #888; cursor: pointer;">&times;</span>
+                <h2 style="margin-top:0;">Use in my class</h2>
+                <form id="use-in-class-form" method="POST" action="{{ url_for('use_homework_in_class', homework_id=homework['id']) }}">
+                    <label for="class-select">Select class:</label>
+                    <select name="class_id" id="class-select" required style="width:100%;margin-bottom:16px;">
+                        {% for c in teacher_classes %}
+                            <option value="{{ c['id'] }}">{{ c['class_name'] }} ({{ c['subject'] }}, Grade {{ c['grade_level'] }})</option>
+                        {% endfor %}
+                    </select>
+                    <label style="display:block; margin-bottom:10px;">
+                        <input type="checkbox" name="is_team_challenge" value="1" id="team-challenge-checkbox" onchange="toggleTeamChallengeOptions()">
+                        Team Challenge
+                    </label>
+                    <div id="team-challenge-options" style="display:none; margin-bottom:10px;">
+                        <label>Start Time:</label>
+                        <input type="datetime-local" name="start_time" value="{{ default_start_time }}" style="width:100%;margin-bottom:8px;">
+                        <label>End Time:</label>
+                        <input type="datetime-local" name="end_time" value="{{ default_end_time }}" style="width:100%;margin-bottom:8px;">
+                        <label>Points:</label>
+                        <input type="number" name="points" value="100" min="1" style="width:100%;margin-bottom:8px;">
+                    </div>
+                    <div style="margin-top:18px; display:flex; gap:18px; justify-content:center;">
+                        <button type="submit" name="save" class="submit-button">Save as Draft</button>
+                        <button type="submit" name="publish" class="submit-button">Save and Publish</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>
+        function openUseInClassModal() {
+            document.getElementById('useInClassModal').style.display = 'block';
+        }
+        function closeUseInClassModal() {
+            document.getElementById('useInClassModal').style.display = 'none';
+        }
+        function toggleTeamChallengeOptions() {
+            var cb = document.getElementById('team-challenge-checkbox');
+            var opts = document.getElementById('team-challenge-options');
+            opts.style.display = cb.checked ? 'block' : 'none';
+        }
+        window.onclick = function(event) {
+            var modal = document.getElementById('useInClassModal');
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+        // Modal close on outside click
+        document.addEventListener('mousedown', function(event) {
+            const modal = document.getElementById('help-modal');
+            if (modal && modal.style.display === 'flex' && event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+        </script>
+    {% else %}
+        <div class="bottom-buttons-fixed">
+            <button type="submit" form="edit-form" name="save" class="submit-button">Save as Draft</button>
+            <button type="submit" form="edit-form" name="publish" class="submit-button">Save and Publish</button>
+        </div>
+        <script>
+            // Modal close on outside click
+            document.addEventListener('mousedown', function(event) {
+                const modal = document.getElementById('help-modal');
+                if (modal && modal.style.display === 'flex' && event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        </script>
+    {% endif %}
 </body>
 </html>

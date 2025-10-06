@@ -17,6 +17,23 @@
         <li>Name: {{ student['name'] }}</li>
         <li>Email: {{ student['email'] }}</li>
         <li>Skill Level: {{ student['skill_level'] }}</li>
+        <li>
+            <div style="display:flex;align-items:center;gap:12px;max-width:560px;">
+                <span style="min-width:40px;text-align:right;font-weight:bold;">Level {{ student['level'] }}</span>
+                <div style="flex:1;position:relative;height:28px;background:#eee;border-radius:14px;overflow:hidden;">
+                    {% set prev_threshold = 0 if student['level'] == 1 else thresholds[student['level']-2] %}
+                    {% set next_threshold = thresholds[student['level']-1] %}
+                    {% set points_in_level = student['points'] - prev_threshold %}
+                    {% set points_needed = next_threshold - prev_threshold %}
+                    {% set percent = (points_in_level / points_needed * 100) if points_needed > 0 else 0 %}
+                    <div style="height:100%;background:linear-gradient(90deg,#4fc3f7,#1976d2);width:{{ percent if percent <= 100 else 100 }}%;transition:width 0.5s;"></div>
+                    <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;color:#222;">
+                        Still {{ next_threshold - student['points'] if next_threshold - student['points'] > 0 else 0 }} points to reach Level {{ student['level']+1 }}
+                    </span>
+                </div>
+                <span style="min-width:40px;text-align:left;font-weight:bold;">Level {{ student['level']+1 }}</span>
+            </div>
+        </li>
     </ul>
 
     <h2>Your Courses:</h2>
@@ -24,11 +41,217 @@
         {% for class in joined_classes %}
             <li>
                 <a href="/class_details_student/{{ class['id'] }}/{{ student['id'] }}">
-                    {{ class['class_name'] }} - Subject: {{ class['subject'] }} - Teacher: {{ class['teacher_name'] }} - Skill Level (Class): {{ class['class_skill_level'] }}
+                    {{ class['class_name'] }} - Subject: {{ class['subject'] }} - Teacher: {{ class['teacher_name'] }} - Class Skill Level: {{ class['class_skill_level'] }}
                 </a>
             </li>
         {% endfor %}
     </ul>
+
+    <h3>Your Favorite Badges</h3>
+    <div id="favorite-badges" style="display:flex;gap:18px;margin-bottom:18px;justify-content:center;align-items:center;">
+        {% for badge in favorite_badges %}
+            <div style="text-align:center;">
+                <img src="{{ badge.icon_url }}" alt="{{ badge.name }}" style="height:64px;width:64px;object-fit:contain;">
+                <div style="font-size:0.95em;">{{ badge.name }}</div>
+            </div>
+        {% endfor %}
+        {% for i in range(3 - favorite_badges|length) %}
+            <div style="height:64px;width:64px;background:#eee;border-radius:12px;display:inline-block;"></div>
+        {% endfor %}
+    </div>
+
+    <button onclick="document.getElementById('badge-select-modal').style.display='block';">Choose Favorite Badges</button>
+        <div id="badge-select-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.3);z-index:9999;align-items:center;justify-content:center;">
+            <div style="background:#fff;padding:24px;border-radius:14px;max-width:600px;margin:60px auto;">
+                <h4>Select up to 3 favorite badges</h4>
+                <form id="favorite-badges-form">
+                    <div style="display:flex;flex-wrap:wrap;gap:16px;">
+                        {% for badge in badge_progress if badge.achieved %}
+                            <label style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+                                <input type="checkbox" name="badge_ids[]" value="{{ badge.id }}" style="margin-bottom:6px;"
+                                    {% if badge.id in favorite_badges|map(attribute='id')|list %}checked{% endif %}
+                                    onclick="limitBadges(this)">
+                                <img src="{{ badge.icon_url }}" alt="{{ badge.name }}" style="height:48px;width:48px;object-fit:contain;">
+                                <span style="font-size:0.9em;">{{ badge.name }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div style="margin-top:18px;">
+                        <button type="button" onclick="submitFavoriteBadges()">Save</button>
+                        <button type="button" onclick="document.getElementById('badge-select-modal').style.display='none';">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    <h3 style="text-align:center;margin-top:36px;margin-bottom:18px;">Badges Progress</h3>
+    <div style="max-width:600px;margin:0 auto 32px auto;">
+        {% for badge in badge_progress %}
+            {% if badge.achieved or badge.is_next %}
+                <div style="margin-bottom:18px;padding:16px 22px;border-radius:14px;box-shadow:0 1px 8px #e0e0e0;background:
+                    {% if badge.achieved %}#e6ffe6
+                    {% elif badge.is_next %}#f0f7ff
+                    {% else %}#f7f7f7{% endif %};
+                    opacity:{{ badge.achieved or badge.is_next and 1 or 0.6 }};">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div>
+                            <span style="font-size:2.2em;vertical-align:middle;">
+                                {% if badge.icon_url %}
+                                    <img src="{{ badge.icon_url }}" alt="Badge" style="height:56px;width:56px;object-fit:contain;vertical-align:middle;">
+                                {% else %}
+                                    <!-- Fallback Emoji falls kein Bild -->
+                                    {% if badge.category == 'level' %}🏅{% elif badge.category == 'homework' %}📚{% elif badge.category == 'retry' %}🔄{% elif badge.category == 'team' %}🤝{% endif %}
+                                {% endif %}
+                            </span>
+                            <b style="margin-left:10px;">{{ badge.name }}</b>
+                            <span style="font-size:0.97em;color:#888;">({{ badge.category|capitalize }})</span>
+                        </div>
+                        {% if badge.achieved %}
+                            <span style="color:green;font-weight:bold;">✔️ Achieved</span>
+                        {% elif badge.is_next %}
+                            <button class="show-locked-btn" data-cat="{{ badge.category }}" style="background:#e3eaff;border:none;color:#1976d2;cursor:pointer;font-weight:bold;padding:7px 20px;border-radius:50px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px #e0eaff;transition:background 0.2s;">
+                                <span class="btn-text">Show next badges</span>
+                                <span class="btn-icon" style="font-size:1.1em;">▼</span>
+                            </button>
+                        {% endif %}
+                    </div>
+                    <div style="font-size:1em;color:#444;margin:6px 0 12px 0;">{{ badge.description }}</div>
+                    {% if badge.is_next and not badge.achieved %}
+                        <div style="background:#ddd;border-radius:8px;overflow:hidden;height:20px;margin-bottom:6px;">
+                            <div style="background:linear-gradient(90deg,#4fc3f7,#1976d2);height:100%;width:{{ (badge.current/badge.threshold*100) if badge.threshold > 0 and badge.current < badge.threshold else 100 }}%;transition:width 0.5s;"></div>
+                        </div>
+                        <div style="font-size:0.97em;color:#333;">
+                            {{ badge.current }} / {{ badge.threshold }} {{ badge.category == 'level' and 'Level' or 'Tasks' }}
+                            ({{ badge.threshold - badge.current if badge.current < badge.threshold else 0 }} to go)
+                        </div>
+                    {% elif badge.achieved %}
+                        <div style="font-size:0.97em;color:green;"><b>Completed!</b></div>
+                    {% endif %}
+                </div>
+            {% endif %}
+            {% if badge.is_next %}
+                <div class="locked-badges" id="locked-{{ badge.category }}" style="display:none;transition:max-height 0.4s cubic-bezier(.4,0,.2,1);overflow:hidden;">
+                    {% for locked in badge_progress %}
+                        {% if locked.category == badge.category and not locked.achieved and not locked.is_next %}
+                            <div style="margin-bottom:10px;padding:10px 16px;border-radius:10px;background:#f7f7f7;opacity:0.6;">
+                                <span style="font-size:1.2em;vertical-align:middle;">
+                                    {% if locked.icon_url %}
+                                        <img src="{{ locked.icon_url }}" alt="Badge" style="height:40px;width:40px;object-fit:contain;vertical-align:middle;">
+                                    {% else %}
+                                        {% if locked.category == 'level' %}🏅{% elif locked.category == 'homework' %}📚{% elif locked.category == 'retry' %}🔄{% elif locked.category == 'team' %}🤝{% endif %}
+                                    {% endif %}
+                                </span>
+                                <b style="margin-left:8px;">{{ locked.name }}</b>
+                                <span style="font-size:0.95em;color:#888;">({{ locked.category|capitalize }})</span>
+                                <span style="color:#aaa;font-weight:bold;margin-left:10px;">🔒 Locked</span>
+                                <div style="font-size:0.97em;color:#444;margin:2px 0 0 0;">{{ locked.description }}</div>
+                                <div style="font-size:0.93em;color:#333;">
+                                    Needs {{ locked.threshold }} {{ locked.category == 'level' and 'Level' or 'Tasks' }}
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+    <!-- Help Popup -->
+<div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+    <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:540px; max-height:85vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+        <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+            style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+        <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">
+            Explanation<br>Student Dashboard
+        </h2>
+        <div style="font-size:1.08em; color:#333; text-align:left;">
+            <div style="font-weight:bold; margin-top:12px;">Your Information & Skill Level System</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>
+                    The platform uses a skill level system to make sure you get tasks that match your abilities.
+                </li>
+                <li>
+                    Your <b>overall skill level</b> is the average of your skill levels in all your classes.
+                </li>
+                <li>
+                    In the class list, the <b>Class Skill Level</b> shows your skill level for that specific class.
+                </li>
+                <li>
+                    As you solve tasks correctly, your skill level increases. If you answer many questions incorrectly, your skill level can also decrease.
+                </li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Your Courses</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>Lists all classes you are currently enrolled in.</li>
+                <li>Click on a class to see more details, assignments, and your progress in that class.</li>
+                <li>The "Class Skill Level" is your skill level in that class only.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Gamification</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>You earn points for completing homework and for retrying assignments.</li>
+                <li>With these points, you can level up and unlock badges.</li>
+                <li>Leveling up and earning badges is meant to motivate you and make learning more fun.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Badges</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>You can earn different badges for completing homework, reaching new levels, or working in teams.</li>
+                <li>You can select up to 3 favorite badges to display on your profile.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Favorite Badges</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>Choose your favorite badges to show them to your Class Members. Only badges you have already earned can be selected.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Badges Progress</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>See all badges you have earned and which ones you can unlock next.</li>
+                <li>Click "Show next badges" to see locked badges and what you need to do to unlock them.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Skill Level Progress Chart</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>The chart shows how your overall skill level has changed over time, based on your homework results in all classes.</li>
+                <li>Hover over the points to see which homework and class contributed to your progress.</li>
+            </ul>
+            <div style="font-weight:bold; margin-top:12px;">Join a Class</div>
+            <ul style="margin-left:22px; margin-bottom:10px;">
+                <li>Use the search bar to find and join new classes. Start typing to see suggestions and select the class you want to join.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+    <script>
+    document.querySelectorAll('.show-locked-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const cat = btn.getAttribute('data-cat');
+            const lockedDiv = document.getElementById('locked-' + cat);
+            const btnText = btn.querySelector('.btn-text');
+            const btnIcon = btn.querySelector('.btn-icon');
+            if (lockedDiv.style.display === 'none' || lockedDiv.style.display === '') {
+                lockedDiv.style.display = 'block';
+                lockedDiv.style.maxHeight = lockedDiv.scrollHeight + "px";
+                btnText.textContent = "Hide next badges";
+                btnIcon.textContent = "▲";
+                btn.style.background = "#dbeafe";
+            } else {
+                lockedDiv.style.maxHeight = "0";
+                setTimeout(() => { lockedDiv.style.display = 'none'; }, 400);
+                btnText.textContent = "Show next badges";
+                btnIcon.textContent = "▼";
+                btn.style.background = "#e3eaff";
+            }
+        });
+    });
+    </script>
 
     <h3>Overall Skill Level Progress</h3>
     <div class="chart-container" style="max-width: 800px;">
@@ -138,6 +361,75 @@
             const classId = document.getElementById('class_id').value;
             return classId !== '';
         }
+
+        function limitBadges(checkbox) {
+            const checked = document.querySelectorAll('#favorite-badges-form input[type="checkbox"]:checked');
+            if (checked.length > 3) {
+                checkbox.checked = false;
+                alert("You can select up to 3 badges.");
+            }
+        }
+        function submitFavoriteBadges() {
+            const form = document.getElementById('favorite-badges-form');
+            const data = new FormData(form);
+            fetch('/set_favorite_badges', {
+                method: 'POST',
+                body: data
+            }).then(() => location.reload());
+        }
     </script>
+
+    {% if new_badges %}
+    <script>
+    window.addEventListener('DOMContentLoaded', function() {
+        let html = `<h3>🎉 New Badge{{ new_badges|length > 1 and 's' or '' }} Unlocked!</h3>`;
+        {% for badge in new_badges %}
+            html += `<div style="margin:12px 0;">
+                <b>{{ badge.name }}</b><br>
+                <span style="font-size:0.95em;">{{ badge.description }}</span>
+            </div>`;
+        {% endfor %}
+        showBadgeModal(html);
+        function showBadgeModal(content) {
+            let modal = document.createElement('div');
+            modal.style = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;";
+            modal.innerHTML = `<div style="background:#fff;padding:32px 32px 20px 32px;border-radius:14px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.18);text-align:center;">
+                ${content}
+                <br><button onclick="this.parentNode.parentNode.remove()" style="margin-top:18px;min-width:100px;">OK</button>
+            </div>`;
+            document.body.appendChild(modal);
+        }
+    });
+    </script>
+    {% endif %}
+
+    {% if level_up %}
+<script>
+window.addEventListener('DOMContentLoaded', function() {
+    let html = `<h3>🎉 Level Up!</h3>
+        <div style="margin:12px 0;">
+            <b>Congratulations!</b><br>
+            You have reached <span style="color:#1976d2;font-weight:bold;">Level {{ level_up }}</span>!
+        </div>`;
+    showLevelUpModal(html);
+    function showLevelUpModal(content) {
+        let modal = document.createElement('div');
+        modal.style = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;";
+        modal.innerHTML = `<div style="background:#fff;padding:32px 32px 20px 32px;border-radius:14px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.18);text-align:center;">
+            ${content}
+            <br><button onclick="this.parentNode.parentNode.remove()" style="margin-top:18px;min-width:100px;">OK</button>
+        </div>`;
+        document.body.appendChild(modal);
+    }
+});
+
+    document.addEventListener('mousedown', function(event) {
+        const modal = document.getElementById('help-modal');
+        if (modal && modal.style.display === 'flex' && event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+</script>
+{% endif %}
 </body>
 </html>

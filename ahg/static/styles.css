@@ -41,6 +41,84 @@ h1, h2, h3 {
     gap: 10px;
 }
 
+.top-buttons-fixed {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 2000;
+    background: none;
+    box-shadow: none;
+}
+
+.top-buttons-fixed-right {
+    position: fixed;
+    top: 24px;
+    right: 32px;
+    z-index: 1000;
+}
+
+.top-buttons-fixed-left {
+    position: fixed;
+    top: 24px;
+    left: 24px;
+    z-index: 1000;
+    background: none;
+    box-shadow: none;
+}
+
+.top-buttons-fixed-vertical {
+    position: fixed;
+    top: 24px;
+    left: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 1000;
+    background: none;
+    box-shadow: none;
+}
+
+.top-buttons-fixed-vertical .button,
+.top-buttons-fixed-vertical .submit-button {
+    width: 170px;
+    min-width: 170px;
+    max-width: 170px;
+    text-align: center;
+    margin: 0;
+    border-radius: 5px;
+    box-shadow: none;
+    display: block;
+    background: #4a4a8e;
+    color: #fff;
+    font-size: 1em;
+    font-weight: 500;
+    border: none;
+    padding: 10px 0;
+    transition: background 0.3s;
+}
+
+.top-buttons-fixed-vertical .button:hover,
+.top-buttons-fixed-vertical .submit-button:hover {
+    background: #363657;
+}
+
+.top-buttons-fixed-vertical .submit-button.danger {
+    background: #e74c3c;
+    color: #fff;
+    box-shadow: none;
+}
+
+.top-buttons-fixed-vertical .submit-button.danger:hover {
+    background: #c0392b;
+}
+
+/* Entferne weißen Hintergrund von Danger-Button in allen Kontexten */
+.submit-button.danger, .top-buttons-fixed-vertical .submit-button.danger {
+    background: #e74c3c !important;
+    color: #fff !important;
+    box-shadow: none !important;
+}
+
 ul.class-list, ul.student-list {
     list-style-type: none;
     padding: 0;
@@ -281,4 +359,194 @@ textarea#description {
     width: 74%; 
     height: 200px; 
     resize: none; 
+}
+
+.retry-tasks-fixed {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px #ccc;
+    padding: 16px;
+    min-width: 220px;
+    z-index: 2000;
+}
+
+.create-content-fixed {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 3000;
+}
+
+.bottom-buttons-fixed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    gap: 18px;
+    background: rgba(255,255,255,0.95);
+    padding: 18px 0 18px 0;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.07);
+}
+
+.bottom-buttons-fixed .submit-button {
+    min-width: 180px;
+    font-size: 1.08em;
+}
+
+.homework-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.homework-item {
+    background: #f7f7ff;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 8px rgba(80,80,120,0.06);
+    transition: box-shadow 0.2s;
+}
+.homework-item:hover {
+    box-shadow: 0 4px 16px rgba(80,80,120,0.13);
+}
+
+.locked-badges {
+    max-height: 0;
+    transition: max-height 0.4s cubic-bezier(.4,0,.2,1);
+    overflow: hidden;
+}
+
+.big-input {
+    width: 100%;
+    min-height: 90px;
+    font-size: 1.13em;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1.5px solid #bfc4e0;
+    margin-bottom: 12px;
+    background: #fff;
+    box-sizing: border-box;
+    resize: vertical;
+}
+input.big-input[type="text"],
+input.big-input[type="number"] {
+    min-height: 44px;
+    height: 44px;
+}
+
+textarea.big-input {
+    min-height: 90px;
+    resize: vertical;
+}
+
+body {
+    background: #f4f6fb;
+}
+.archive-container {
+    max-width: 1150px;
+    margin: 40px auto 0 auto;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(80,80,160,0.09);
+    padding: 36px 36px 28px 36px;
+}
+.archive-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+}
+.archive-title {
+    font-size: 2em;
+    color: #2d2d6e;
+    font-weight: bold;
+    margin: 0;
+}
+.back-btn {
+    background: #4a4a8e;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 1em;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.2s;
+}
+.back-btn:hover {
+    background: #2d2d6e;
+}
+.filter-bar {
+    display: flex;
+    gap: 22px;
+    align-items: flex-end;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+.filter-bar label {
+    font-weight: 500;
+    color: #4a4a8e;
+    margin-bottom: 2px;
+    display: block;
+}
+.filter-bar select, .filter-bar input[type="text"] {
+    padding: 7px 12px;
+    border-radius: 7px;
+    border: 1.2px solid #bfc4e0;
+    font-size: 1em;
+    background: #f7f7ff;
+    min-width: 120px;
+}
+.filter-bar input[type="text"] {
+    min-width: 220px;
+}
+.archive-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(80,80,160,0.07);
+}
+.archive-table th, .archive-table td {
+    padding: 14px 18px;
+    border-bottom: 1px solid #e0e0e0;
+    text-align: left;
+}
+.archive-table th {
+    background: #f7f7ff;
+    color: #4a4a8e;
+    font-size: 1.08em;
+    font-weight: 600;
+}
+.archive-table tr:last-child td {
+    border-bottom: none;
+}
+.archive-table tr:hover td {
+    background: #f0f4ff;
+}
+@media (max-width: 900px) {
+    .archive-container { padding: 18px 2vw 12px 2vw; }
+    .archive-header { flex-direction: column; gap: 18px; align-items: flex-start; }
+    .filter-bar { flex-direction: column; gap: 10px; }
+    .archive-title { font-size: 1.3em; }
+}
+
+.modal {
+    display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100vw; height: 100vh;
+    overflow: auto; background: rgba(0,0,0,0.25);
+}
+.modal-content {
+    background: #fff; margin: 8% auto; padding: 24px 32px 18px 32px; border-radius: 12px; box-shadow: 0 2px 16px rgba(80,80,160,0.13);
+    position: relative;
+}
+.close {
+    position: absolute; right: 18px; top: 12px; font-size: 2em; color: #888; cursor: pointer;
 }

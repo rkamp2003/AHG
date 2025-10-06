@@ -6,87 +6,474 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="top-buttons" style="display: flex; justify-content: flex-start;">
-        <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Back to Class</a>
+    <div class="top-buttons-fixed">
+        {% if teacher_view %}
+            <a href="/student_details/{{ student_id }}/{{ class_info['id'] }}/{{ teacher_id }}" class="button">Back to Student Details</a>
+        {% else %}
+            <a href="/class_details_student/{{ class_info['id'] }}/{{ student_id }}" class="button">Back to Class</a>
+        {% endif %}
     </div>
 
-    <h1>{{ homework['title'] }}</h1>
-    <h3>{{ class_info.class_name }} - {{ class_info.subject }} (Teacher: {{ class_info.teacher_name }})</h3>
-    <p>Created on: {{ homework['date_created'] }}</p>
+    {% if goal_score is defined and current_score is defined and goal_score is not none and current_score is not none %}
+    <div style="max-width: 500px; margin: 32px auto 24px auto; padding: 18px 24px; background: #f7f7ff; border-radius: 12px; box-shadow: 0 2px 8px rgba(80,80,160,0.07);">
+        <div style="font-weight: bold; color: #4a4a8e; margin-bottom: 8px; text-align:center;">
+            Team Challenge Progress
+                </div>
+                <div style="width: 100%; background: #e0e0e0; border-radius: 8px; height: 26px; overflow: hidden; margin-bottom: 8px;">
+        <div style="position: relative; width: 100%; height: 26px;">
+            <div style="
+                width: {% if current_score > 0 and goal_score > 0 %}{{ (current_score / goal_score * 100) }}%{% else %}0{% endif %};
+                background: linear-gradient(90deg, #4fc3f7, #1976d2);
+                height: 100%;
+                border-radius: 8px 0 0 8px;
+                transition: width 0.5s;
+            "></div>
+            {% if current_score >= goal_score %}
+                <span style="
+                    position: absolute;
+                    left: 50%;
+                    top: 50%;
+                    transform: translate(-50%, -50%);
+                    color: #fff;
+                    font-weight: bold;
+                    font-size: 1em;
+                    pointer-events: none;
+                    white-space: nowrap;
+                ">Completed!</span>
+            {% endif %}
+        </div>
+        </div>
+        <div style="text-align:center; color:#4a4a8e; font-size:0.98em;">
+            Points: <b>{{ current_score }}</b> &nbsp;|&nbsp; Goal: <b>{{ goal_score }}</b>
+        </div>
+    </div>
+    {% endif %}
 
+    {% if questions and questions|length > 0 %}
     <form id="homework-form">
+            <h1>{{ homework['title'] }}</h1>
+            <h3>{{ class_info.class_name }} - {{ class_info.subject }} - Teacher: {{ class_info.teacher_name }}</h3>
+            <p>Assigned on: {{ homework['date_created'] }}</p>
+            <br>
+        <input type="hidden" name="homework_id" value="{{ homework['id'] }}">
         <ol>
             {% for question in questions %}
                 <li>
-                    <p>{{ question['question'] }} 
-                    <br> <em>({{ question['taxonomy'] }})</em></p>
-                    <ul>
-                        {% for option in question['options'] %}
-                            <li>
-                                <label>
-                                    <input type="radio" name="answer_{{ question.index }}" value="{{ option.index }}">
-                                    {{ option.option }}
-                                </label>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                    <span id="result_{{ question.index }}"></span>
+                    <div style="margin-bottom: 18px;">
+                        <div style="font-weight: bold; margin-bottom: 4px;">
+                            {{ question['question'] }}
+                        </div>
+                        <div style="color: #aaa; font-size: 0.98em; margin-bottom: 8px;">
+                            ({{ question['taxonomy'] }})
+                        </div>
+                        <div style="margin-bottom: 10px; text-align: center;">
+                            {% for option in question['options'] %}
+                                <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: center;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                        <input type="radio" name="answer_{{ question.index }}" value="{{ option.index }}"
+                                            style="margin:0;"
+                                            {% if selected_answers[question.index|string] is defined and selected_answers[question.index|string] == option.index %}checked{% endif %}
+                                            {% if homework_status == "Done" %}disabled{% endif %}>
+                                        <span>{{ option.option }}</span>
+                                    </label>
+                                </div>
+                            {% endfor %}
+                        </div>
+                <span id="result_{{ question.index }}"></span>
+            </li>
+        {% endfor %}
+    </ol>
+    {% if homework_status == "Open" %}
+        <button id="check-button" type="button" onclick="checkAnswers()">Check</button>
+        <button id="submit-button" type="button" style="display: none;" onclick="submitHomework()">Submit</button>
+    {% endif %}
+</form>
+{% endif %}
+
+    {% if mc_feedback_summary %}
+        <div class="mc-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:700px; position:relative;">
+            <!-- Feedback Content mittig, aber Text linksbündig -->
+            <div style="max-width:420px; margin:0 auto; text-align:left;">
+                <h3 style="margin-top:0;">Multiple Choice Results</h3>
+                <div style="margin-top:10px;">
+                    <b>Correct:</b> {{ mc_correct_count }}<br>
+                    <b>Incorrect:</b> {{ mc_incorrect_count }}<br>
+                    <b>Summary:</b> <span style="font-style:italic; color:#222;">"{{ mc_feedback_summary }}"</span><br>
+                    <b>Recommendation:</b> <span style="font-style:italic; color:#222;">"{{ mc_feedback_recommendation }}"</span>
+                    <br>
+                    <span style="color:#d32f2f; font-size:0.98em; font-weight:bold; display:block; margin-top:12px;">
+                        &#9888; This feedback was generated by an AI and may not always be 100% accurate. Please use it as a helpful guide, but do not rely on it alone.  &#9888;
+                    </span>
+                </div>
+            </div>
+            <!-- AI Sidekick Image absolut rechts -->
+            <img src="{{ url_for('static', filename='ai_sidekick.png') }}" alt="AI Sidekick"
+                style="position:absolute; top:50%; right:-90px; transform:translateY(-50%); width:210px; height:210px; border-radius:50%;">
+        </div>
+    {% endif %}
+
+{% if open_questions and open_questions|length > 0 %}
+    <form id="openq-form" style="background-color:#fff; padding: 32px 28px; border-radius: 14px; box-shadow: 0 0 16px rgba(0,0,0,0.10); max-width: 500px; margin: 40px auto;">
+        <h1>{{ homework['title'] }}</h1>
+        <h3>{{ class_info.class_name }} - {{ class_info.subject }} - Teacher: {{ class_info.teacher_name }}</h3>
+        <p>Assigned: {{ homework['date_created'][:16].replace('T', ' ') if 'T' in homework['date_created'] else homework['date_created'] }}</p>
+        <br>
+        <ol>
+            {% for oq in open_questions %}
+                <li style="margin-bottom:32px;">
+                    <div style="font-weight:600;">{{ oq['question'] }}</div>
+                    <div style="color:#666;"><em>({{ oq['taxonomy'] }})</em></div>
+                    <textarea name="answer_{{ oq['id'] }}" rows="8"
+                        style="width:70%; min-width:260px; max-width:500px; min-height:160px; max-height:320px; border-radius:8px; padding:10px; margin-bottom:8px; resize:vertical;"
+                        placeholder="Write your answer here..."
+                        {% if openq_feedback %}readonly{% endif %}
+                    >{{ openq_answers[oq['id']|string] if openq_answers[oq['id']|string] is defined else '' }}</textarea>
+                    <div id="feedback_{{ oq['id'] }}"></div>
+                    {% if openq_feedback and openq_feedback.feedback[oq['id']|string] is defined %}
+                        <div class="openq-feedback" style="margin-top:8px; color:{{ 'green' if openq_feedback.feedback[oq['id']|string].is_correct else 'red' }};">
+                            {{ openq_feedback.feedback[oq['id']|string].result }}
+                        </div>
+                    {% endif %}
+                    <details id="sample_solution_{{ oq['id'] }}" style="display:{% if openq_feedback %}block{% else %}none{% endif %}; margin-top:8px;">
+                        <summary>Show Sample Solution</summary>
+                        <div style="margin-top:6px; color:#444; background:#f8f8fa; border-radius:8px; padding:16px;">
+                            {{ oq['sample_solution'] }}
+                        </div>
+                    </details>
                 </li>
             {% endfor %}
         </ol>
-
-        <button id="check-button" type="button" onclick="checkAnswers()">Check</button>
-        {% if homework_status == "Open" %}
-            <button id="submit-button" type="button" style="display: none;" onclick="submitHomework()">Submit</button>
+        {% if not openq_feedback %}
+            <button id="check-openq-btn" type="button" class="button" style="margin: 24px auto 0 auto; width: 220px;">Check</button>
+            <div style="margin-top:10px; color:#d32f2f; font-size:1em; font-weight:bold; text-align:center; max-width:420px; margin-left:auto; margin-right:auto;">
+                &#9888; Your answers will be checked by an AI. Mistakes are possible! If you are unsure about your result, ask your teacher, parents, friends, or siblings for help. &#9888;
+            </div>
         {% endif %}
+        <div id="openq-feedback-summary" style="margin: 24px auto 0 auto; max-width: 500px;"></div>
     </form>
+{% endif %}
+
+    {% if openq_feedback %}
+        <div class="openq-results" style="background:#f7f7ff; border-radius:10px; padding:18px; margin:24px auto; max-width:700px; position:relative;">
+            <!-- Feedback Content mittig, aber Text linksbündig -->
+            <div style="max-width:420px; margin:0 auto; text-align:left;">
+                <h3 style="margin-top:0;">Open Questions Results</h3>
+                <div style="margin-top:10px;">
+                    <b>Correct:</b> {{ openq_feedback.correct_count }}<br>
+                    <b>Incorrect:</b> {{ openq_feedback.wrong_count }}<br>
+                    <b>Summary:</b> <span style="font-style:italic; color:#222;">"{{ openq_feedback.summary }}"</span><br>
+                    <b>Recommendation:</b> <span style="font-style:italic; color:#222;">"{{ openq_feedback.recommendation }}"</span>
+                    <br>
+                    <span style="color:#d32f2f; font-size:0.98em; font-weight:bold; display:block; margin-top:12px;">
+                        &#9888; This feedback was generated by an AI and may not always be 100% accurate. Please use it as a helpful guide, but do not rely on it alone.  &#9888;
+                    </span>
+                </div>
+            </div>
+            <!-- AI Sidekick Image absolut rechts -->
+            <img src="{{ url_for('static', filename='ai_sidekick.png') }}" alt="AI Sidekick"
+                style="position:absolute; top:50%; right:-90px; transform:translateY(-50%); width:210px; height:210px; border-radius:50%;">
+        </div>
+    {% endif %}
+
+    <!-- Retry-Modal -->
+    <div id="retry-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:1000;">
+        <div style="background:#fff; padding:28px 28px 20px 28px; border-radius:14px; max-width:440px; max-height:90vh; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; overflow-y:auto;">
+            <h3 style="margin-top:0; margin-bottom:18px; text-align:center; font-size:1.5em;">Retry Homework</h3>
+            <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">Retry-Typ:</label>
+            <select id="retry-type" style="margin-bottom:18px; width:80%; padding:6px; border-radius:6px; text-align:center; font-size:1em;">
+                <option value="mc">Multiple Choice</option>
+                <option value="open_questions">Open Questions</option>
+            </select>
+            <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">Reason:</label>
+            <select id="retry-reason" style="margin-bottom:18px; width:80%; padding:6px; border-radius:6px; text-align:center; font-size:1em;">
+                <option value="I want more practice">I want more practice</option>
+                <option value="I want new questions">I want new questions</option>
+                <option value="I want to improve my score">I want to improve my score</option>
+                <option value="Other">Other</option>
+            </select>
+            <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Extra info (optional):</label>
+            <textarea id="retry-extra-info" style="width:90%; min-height:60px; border-radius:6px; padding:6px; margin-bottom:10px; text-align:center;"></textarea>
+            <div style="display:flex; gap:10px; margin-top:10px; width:100%; justify-content:center;">
+                <button onclick="submitRetry()" class="button" style="min-width:100px;">Request Retry</button>
+                <button onclick="closeRetryModal()" class="button" style="min-width:100px;">Cancel</button>
+                <button type="button" onclick="showPrompt()" class="button" style="min-width:120px;">Show Full Prompt</button>
+            </div>
+            <!-- AI Sidekick Hinweis -->
+            <div style="display:flex; align-items:flex-start; gap:18px; margin-bottom:16px; width:100%;">
+                <img src="{{ url_for('static', filename='ai_sidekick_left.png') }}" alt="AI Sidekick"
+                    style="width:80px; height:80px; border-radius:50%; flex-shrink:0;">
+                <div style="font-size:1.04em; font-style:italic; color:#222;">
+                    "I'll create new tasks for you in your chosen format, based on the mistakes you made in the original homework."
+                </div>
+            </div>
+            <span style="color:#d32f2f; font-size:0.97em; font-style:normal; font-weight:bold; display:block; margin-top:6px; width:100%; text-align:center;">
+                &#9888; Please note: All tasks and solutions are fully AI-generated and have not been checked for correctness. &#9888;
+            </span>
+            <pre id="full-prompt" style="display:none; background:#f6f6f6; padding:12px; margin-top:14px; max-width:100%; max-height:300px; overflow-x:auto; overflow-y:auto; border-radius:8px; font-size:0.97em;"></pre>
+        </div>
+    </div>
+
+    <!-- Success-Modal -->
+    <div id="success-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:2000;">
+      <div style="background:#fff; padding:28px 28px 20px 28px; border-radius:14px; max-width:440px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center;">
+        <h3 style="margin-top:0; margin-bottom:18px; text-align:center; font-size:1.5em;">Homework Submitted!</h3>
+        <div id="success-modal-content" style="font-size:1.1em; margin-bottom:18px; text-align:center;"></div>
+        <button onclick="closeSuccessModal()" class="button" style="min-width:120px;">OK</button>
+      </div>
+    </div>
+
+
+    <!-- Retry-Tasks-Liste oben rechts -->
+    <div class="retry-tasks-fixed">
+        <h4 style="margin-top:0;">Your Retry Tasks</h4>
+        {% if retry_tasks %}
+            <ul style="padding-left:18px;">
+            {% for retry in retry_tasks %}
+                <li>
+                    {% if teacher_view %}
+                        <a href="{{ url_for('retry_homework_view', retry_id=retry['id'], student_id=student_id) }}?teacher_view=1&teacher_id={{ teacher_id }}">
+                            {{ retry['title'] }}<br>
+                            <span style="font-size:0.9em; color:#888;">{{ retry['date_created'] }}</span>
+                        </a>
+                    {% else %}
+                        <a href="{{ url_for('retry_homework_view', retry_id=retry['id'], student_id=student_id) }}">
+                            {{ retry['title'] }}<br>
+                            <span style="font-size:0.9em; color:#888;">{{ retry['date_created'] }}</span>
+                        </a>
+                    {% endif %}
+                </li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <span>No retry tasks yet.</span>
+        {% endif %}
+    </div>
+
+    <!-- Retry-Button -->
+    <div style="display: flex; justify-content: center; margin-top: 16px;">
+        {% if (homework_status == "Done" or openq_feedback) and not teacher_view %}
+            <button id="retry-button" type="button" class="button" onclick="openRetryModal()" style="display:inline-block;">Retry</button>
+        {% endif %}
+    </div>
+
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 10%; right: 200px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+<div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+    <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:540px; max-height:85vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+        <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+            style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+        <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">
+            Explanation<br>
+            {% if teacher_view %}
+                Homework (Teacher View)
+            {% else %}
+                Homework (Student View)
+            {% endif %}
+        </h2>
+        <div style="font-size:1.08em; color:#333; text-align:left;">
+            {% if goal_score is defined and goal_score is not none %}
+                <div style="font-weight:bold; margin-top:12px;">Team Challenge</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>This is a <b>Team Challenge</b>: The whole class works together to reach a common goal score.</li>
+                    <li>You see the current score and the goal. When the goal is reached, the challenge is completed for everyone who worked on the questions.</li>
+                    <li>Team challenges are designed to motivate students and encourage collaboration.</li>
+                </ul>
+            {% endif %}
+            {% if questions and questions|length > 0 %}
+                <div style="font-weight:bold; margin-top:12px;">Multiple Choice Homework</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Students answer each question by selecting the correct option and can check their answers for instant feedback.</li>
+                    <li>After checking, explanations for each question and the results are shown.</li>
+                    <li>Correct answers increase points and skill level, incorrect answers can lower skill level.</li>
+                </ul>
+            {% endif %}
+            {% if open_questions and open_questions|length > 0 %}
+                <div style="font-weight:bold; margin-top:12px;">Open Questions Homework & AI</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Students write their answers in the text box for each open question.</li>
+                    <li>When they click "Check", their answers are automatically evaluated by an AI, which compares their response to your sample solution.</li>
+                    <li>Feedback and the sample solution are shown after checking.</li>
+                    <li>Correct answers increase skill level, incorrect answers can lower it. Points are awarded for correct answers and for retrying homework.</li>
+                </ul>
+            {% endif %}
+            {% if retry_tasks %}
+                <div style="font-weight:bold; margin-top:12px;">Your Retry Tasks</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    {% if teacher_view %}
+                        <li>In the "Your Retry Tasks" section, you can see all retry tasks that students have created for themselves and inspect these tasks in detail.</li>
+                    {% else %}
+                        <li>Here you can access your own AI-generated retry tasks. These tasks are created based on your previous mistakes and help you practice exactly where you need it most.</li>
+                        <li>Retrying tasks helps you practice and earn more points.</li>
+                    {% endif %}
+                </ul>
+            {% endif %}
+            {% if teacher_view %}
+                <div style="font-weight:bold; margin-top:12px;">Teacher View</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>This view shows the homework exactly as students see it, but you cannot submit answers.</li>
+                    <li>Use this view to check the content, explanations, and AI feedback students receive.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Retry Button & AI-Generated Homework</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        The <b>Retry</b> button allows students to repeat the homework and practice topics they found difficult.
+                    </li>
+                    <li>
+                        When students retry, an AI analyzes their mistakes and automatically creates new homework focused on their personal gaps and learning needs.
+                    </li>
+                    <li>
+                        Students can also choose to change the task format (e.g., from multiple choice to open questions or vice versa) when retrying, to practice in different ways.
+                    </li>
+                    <li>
+                        In the "Your Retry Tasks" section, you can see all retry tasks that students have created for themselves and inspect these tasks in detail. This helps you understand where students need more support.
+                    </li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">AI Feedback & Recommendations</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        At the end of the homework, an AI analyzes student answers and provides a short summary of their performance.
+                    </li>
+                    <li>
+                        Based on the results, the AI gives recommendations for what students should practice next or which topics to focus on to improve further.
+                    </li>
+                    <li>
+                        This feedback helps guide students' learning and supports you in identifying areas for further instruction.
+                    </li>
+                </ul>
+            {% else %}
+                <div style="font-weight:bold; margin-top:12px;">Skill Level & Points System</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Your skill level in this class changes based on your performance in homework assignments.</li>
+                    <li>Points and skill level help you track your progress and unlock new badges.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Retry Button & AI-Generated Homework</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        The <b>Retry</b> button allows you to repeat the homework and practice the topics you found difficult.
+                    </li>
+                    <li>
+                        When you retry, an AI analyzes your mistakes and automatically creates new homework that focuses on your personal gaps and learning needs.
+                    </li>
+                    <li>
+                        You can also choose to change the task format (e.g., from multiple choice to open questions or vice versa) when retrying, so you can practice in different ways.
+                    </li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">AI Feedback & Recommendations</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        At the end of your homework, an AI analyzes your answers and provides a short summary of your performance.
+                    </li>
+                    <li>
+                        Based on your results, the AI gives you recommendations for what you should practice next or which topics you could focus on to improve further.
+                    </li>
+                    <li>
+                        Use this feedback to guide your learning and decide what to work on next.
+                    </li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">General Tips</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Click "Retry" after submitting to practice similar questions and improve your skills.</li>
+                    <li>Use the explanations and sample solutions to learn from your mistakes.</li>
+                    <li>For team challenges, work together with your classmates to reach the goal!</li>
+                </ul>
+            {% endif %}
+        </div>
+    </div>
+</div>
 
     <script>
         const correctAnswers = {{ correct_answers | tojson }};
         const explanations = {{ explanations | tojson }};
         const questions = {{ questions | tojson }};
+        const selectedAnswers = {{ selected_answers | tojson }};
+        const homeworkStatus = "{{ homework_status|trim }}";
+        const openq_feedback = {{ openq_feedback | tojson | default('null', true) }};
+
+        console.log("homeworkStatus:", homeworkStatus);
+
+        function openRetryModal() {
+            document.getElementById('retry-modal').style.display = 'flex';
+        }
         
+        function closeRetryModal() {
+            document.getElementById('retry-modal').style.display = 'none';
+        }
+
+        function showSuccessModal(data, results, bonusText) {
+            const content = `
+                <div style="margin-bottom:10px;">${data.message}</div>
+                <div><b>Correct Answers:</b> ${results.correctCount}</div>
+                <div><b>New Class Skill Level:</b> ${data.class_skill_level}</div>
+                <div><b>New Overall Skill Level:</b> ${data.overall_skill_level}</div>
+                ${bonusText}
+            `;
+            document.getElementById('success-modal-content').innerHTML = content;
+            document.getElementById('success-modal').style.display = 'flex';
+        }
+
+        function closeSuccessModal() {
+            document.getElementById('success-modal').style.display = 'none';
+            window.location.reload();
+        }
+
         function checkAnswers() {
             const form = document.getElementById('homework-form');
             const elements = form.elements;
             const checkedAnswers = {};
             let correctCount = 0;
             let incorrectCount = 0;
-        
+
             for (let el of elements) {
                 if (el.type === "radio" && el.checked) {
                     const questionIndex = el.name.split('_')[1];
                     checkedAnswers[questionIndex] = parseInt(el.value, 10);
                 }
             }
-        
-            for (let questionIndex in correctAnswers) {
-                const resultSpan = document.getElementById('result_' + questionIndex);
-                const userAnswer = checkedAnswers[questionIndex];
-                const correctAnswer = parseInt(correctAnswers[questionIndex], 10);
-        
-                if (userAnswer === undefined) {
-                    const correctText = questions[questionIndex].options[correctAnswer].option;
-                    resultSpan.innerText = `❌ Wrong! No answer selected. Correct answer: ${correctText}. Explanation: ${explanations[questionIndex]}`;
-                    incorrectCount++;
-                } else if (userAnswer === correctAnswer) {
-                    resultSpan.innerText = '✔️ Correct!';
-                    correctCount++;
-                } else {
-                    const correctText = questions[questionIndex].options[correctAnswer].option;
-                    resultSpan.innerText = `❌ Wrong! Correct answer: ${correctText}. Explanation: ${explanations[questionIndex]}`;
-                    incorrectCount++;
-                }
+
+        for (let questionIndex in correctAnswers) {
+            const resultSpan = document.getElementById('result_' + questionIndex);
+            const userAnswer = checkedAnswers[questionIndex];
+            const correctAnswer = parseInt(correctAnswers[questionIndex], 10);
+            const correctOption = questions[questionIndex].options[correctAnswer].option;
+            const explanation = explanations[questionIndex];
+
+            if (userAnswer === undefined) {
+                resultSpan.innerHTML = `<span style="color:red;">❌ No answer selected. <br> Correct answer: ${correctOption}. Explanation: ${explanation}</span>`;
+                incorrectCount++;
+            } else if (userAnswer === correctAnswer) {
+                resultSpan.innerHTML = `<span style="color:green;">✔️ Correct! <br> Explanation: ${explanation}</span>`;
+                correctCount++;
+            } else {
+                resultSpan.innerHTML = `<span style="color:red;">❌ Wrong! <br> Correct answer: ${correctOption}. <br> Explanation: ${explanation}</span>`;
+                incorrectCount++;
             }
-        
-            if ("{{ homework_status }}" == "Open") {
-                document.getElementById('check-button').style.display = 'none';
-                document.getElementById('submit-button').style.display = 'inline-block';
-            }
-        
-            window.homeworkResults = { correctCount, incorrectCount };
         }
-        
+
+            window.homeworkResults = { correctCount, incorrectCount };
+            window.selectedAnswers = checkedAnswers;
+
+            console.log("homeworkStatus:", homeworkStatus);
+            if (homeworkStatus === "Open") {
+                submitHomework();
+                }
+        }
+
+        if (homeworkStatus === "Done") {
+            window.onload = function() {
+                checkAnswers();
+                // Check-Button ausblenden, Retry-Button einblenden
+                document.getElementById('retry-button').style.display = 'inline-block';
+            };
+        }
+
         function submitHomework() {
             const results = window.homeworkResults;
         
@@ -99,20 +486,36 @@
                     homework_id: {{ homework['id'] }},
                     student_id: {{ student_id }},
                     correct_count: results.correctCount,
-                    incorrect_count: results.incorrectCount
+                    incorrect_count: results.incorrectCount,
+                    selected_answers: window.selectedAnswers || {}
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.message) {
-                    const message = `
-                        ${data.message}
-                        Correct Answers: ${results.correctCount}
-                        New Class Skill Level: ${data.class_skill_level}
-                        New Overall Skill Level: ${data.overall_skill_level}
-                    `;
-                    alert(message);
-                    window.location.href = `/class_details_student/{{ class_info['id'] }}/{{ student_id }}`;
+                    // Punkte und Bonuspunkte berechnen
+                    let basePoints = results.correctCount * 2;
+                    let bonusText = "";
+                    // Hole aktuelle Punkte und Bonus aus dem Backend, falls du sie zurückgibst
+                    // Alternativ: Berechne Bonus wie im Backend
+                    fetch('/get_daily_bonus?student_id={{ student_id }}')
+                        .then(resp => resp.json())
+                        .then(bonusData => {
+                            let bonusLeft = bonusData.bonus_left ?? 0;
+                            let doublePoints = Math.min(basePoints, bonusLeft);
+                            let normalPoints = basePoints - doublePoints;
+                            let totalPoints = doublePoints * 2 + normalPoints;
+                            if (doublePoints > 0) {
+                                bonusText = `<br><b>Points:</b> ${basePoints} <span style="color:#4ad991;font-weight:bold;">×2 Daily Bonus</span> = <b>${totalPoints}</b>`;
+                            } else {
+                                bonusText = `<br><b>Points:</b> <b>${basePoints}</b>`;
+                            }
+                            showSuccessModal(data, results, bonusText);
+                        })
+                        .catch(() => {
+                            // Fallback falls Bonus nicht geladen werden kann
+                            showSuccessModal(data, results, `<br><b>Points:</b> <b>${basePoints}</b>`);
+                        });
                 } else {
                     alert('Error submitting homework.');
                 }
@@ -121,6 +524,258 @@
                 alert(`Error submitting homework: ${error}`);
             });
         }
+
+        function submitRetry() {
+            const reason = document.getElementById('retry-reason').value;
+            const extra_info = document.getElementById('retry-extra-info').value;
+            const retryType = document.getElementById('retry-type').value;
+
+            let wrongQuestions = [];
+
+            // Falsche MC-Fragen sammeln
+            let selected;
+            let correct;
+            {% for question in questions %}
+                selected = null;
+                const radios_{{ question.index }} = document.getElementsByName('answer_{{ question.index }}');
+                for (let r = 0; r < radios_{{ question.index }}.length; r++) {
+                    if (radios_{{ question.index }}[r].checked) selected = parseInt(radios_{{ question.index }}[r].value);
+                }
+                correct = (selected === {{ correct_answers[question.index] }});
+                if (!correct) {
+                    wrongQuestions.push({
+                        question: `{{ question["question"]|e }}`,
+                        options: [{% for option in question["options"] %}`{{ option.option|e }}`{% if not loop.last %}, {% endif %}{% endfor %}],
+                        answer: {{ correct_answers[question.index] }},
+                        selected: selected,
+                        explanation: `{{ question["explanation"]|e }}`,
+                        taxonomy: `{{ question["taxonomy"]|e }}`
+                    });
+                }
+            {% endfor %}
+
+            // Falsche Open Questions sammeln
+            let answer;
+            let openq_correct;
+            {% for oq in open_questions %}
+                answer = document.querySelector('[name="answer_{{ oq["id"] }}"]')?.value || "";
+                openq_correct = openq_feedback && openq_feedback.feedback["{{ oq['id'] }}"]?.is_correct;
+                if (!openq_correct) {
+                    wrongQuestions.push({
+                        question: `{{ oq["question"]|e }}`,
+                        sample_solution: `{{ oq["sample_solution"]|e }}`,
+                        taxonomy: `{{ oq["taxonomy"]|e }}`,
+                        student_answer: answer
+                    });
+                }
+            {% endfor %}
+
+            fetch('/retry_homework', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    homework_id: {{ homework['id'] }},
+                    student_id: {{ student_id }},
+                    reason: reason,
+                    extra_info: extra_info,
+                    wrong_questions: wrongQuestions,
+                    class_skill_level: {{ class_skill_level if class_skill_level is not none else 'null' }},
+                    retry_type: retryType
+                })
+            }).then(data => {
+                if (data.retry_id) {
+                    window.location.href = `/retry_homework_view/${data.retry_id}/${student_id}`;
+                } else {
+                    alert('Retry homework generated!');
+                    closeRetryModal();
+                    window.location.reload();
+                }
+            });
+        }
+
+        function showPrompt() {
+            const reason = document.getElementById('retry-reason').value;
+            const extra_info = document.getElementById('retry-extra-info').value;
+            const retryType = document.getElementById('retry-type').value;
+            let wrongQuestions = [];
+            let selected;
+            let correct;
+            {% for question in questions %}
+                selected = null;
+                const radios_{{ question.index }} = document.getElementsByName('answer_{{ question.index }}');
+                for (let r = 0; r < radios_{{ question.index }}.length; r++) {
+                    if (radios_{{ question.index }}[r].checked) selected = parseInt(radios_{{ question.index }}[r].value);
+                }
+                correct = (selected === {{ correct_answers[question.index] }});
+                if (!correct) {
+                    wrongQuestions.push({
+                        question: `{{ question["question"]|e }}`,
+                        options: [{% for option in question["options"] %}`{{ option.option|e }}`{% if not loop.last %}, {% endif %}{% endfor %}],
+                        answer: {{ correct_answers[question.index] }},
+                        selected: selected
+                    });
+                }
+            {% endfor %}
+            // Zusätzlich falsche offene Fragen sammeln (falls vorhanden)
+            let answer;
+            let openq_correct;
+            {% for oq in open_questions %}
+                answer = document.querySelector('[name="answer_{{ oq["id"] }}"]')?.value || "";
+                openq_correct = openq_feedback && openq_feedback.feedback["{{ oq['id'] }}"]?.is_correct;
+                if (!openq_correct) {
+                    wrongQuestions.push({
+                        question: `{{ oq["question"]|e }}`,
+                        sample_solution: `{{ oq["sample_solution"]|e }}`,
+                        taxonomy: `{{ oq["taxonomy"]|e }}`,
+                        student_answer: answer
+                    });
+                }
+            {% endfor %}
+
+
+            let prompt = "";
+            if (retryType === "open_questions") {
+            prompt = `
+You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students. 
+The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
+The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
+
+Your task:
+Please create **10 new multiple-choice questions** (4 options per question, answer as index (0-based)) that:
+- Cover similar topics or concepts as the incorrectly answered questions.
+- Match the student's current class skill level (1-10 scale, 10 = most advanced).
+- Help the student improve by addressing the specific gaps identified through their incorrect responses.
+- Are **not identical** to the original questions but target the same learning objectives.
+
+Homework subject: {{ class_info.subject|e }}
+Homework grade level: {{ class_info.grade_level|e }}
+Homework title: {{ homework.title|e }}
+Homework description: {{ homework['description']|e }}
+Student class skill level: {{ class_skill_level }}
+Reason for retry: ${reason}
+Student's additional info: ${extra_info}
+questions the student got wrong:
+${JSON.stringify(wrongQuestions, null, 2)}
+Please answer only with JSON in this format:
+[
+    {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..."}
+]
+`;
+            } else {
+            prompt = `
+You are an educational assistant on an e-learning platform designed to support personalized, fair, and motivating learning experiences for students.
+The platform uses generative AI to automatically create and adapt learning content based on student performance. One of its features allows students to retry incorrectly answered homework questions to better understand the concepts and improve their skills. This retry functionality aims to support mastery learning and reduce the pressure of one-time assessments.
+The student now wants to retry a previously assigned homework. Below, you will find the context of the original homework assignment, the student’s current class skill level, the reason they chose to retry, and any additional student-provided information. Most importantly, you will also see the list of questions the student answered incorrectly. These incorrect responses serve as the learning foundation for generating improved follow-up questions.
+
+Your task:
+Please create **6 new open-ended questions** (each with taxonomy and a sample_solution) that:
+- Cover similar topics or concepts as the incorrectly answered questions.
+- Match the student's current class skill level (1-10 scale, 10 = most advanced).
+- Help the student improve by addressing the specific gaps identified through their incorrect responses.
+- Are **not identical** to the original questions but target the same learning objectives.
+- For each question, provide a sample_solution that would be considered a very good answer for a student.
+- Please provide one question for each of the following taxonomies: Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+
+Homework subject: {{ class_info.subject|e }}
+Homework grade level: {{ class_info.grade_level|e }}
+Homework title: {{ homework.title|e }}
+Homework description: {{ homework['description']|e }}
+Student class skill level: {{ class_skill_level }}
+Reason for retry: ${reason}
+Student's additional info: ${extra_info}
+Questions the student got wrong:
+${JSON.stringify(wrongQuestions, null, 2)}
+Please answer only with JSON in this format:
+[
+{"question": "...", "sample_solution": "...", "taxonomy": "..."},
+...
+]
+    `;
+            }
+            document.getElementById('full-prompt').innerText = prompt;
+            document.getElementById('full-prompt').style.display = 'block';
+        }
+
+
+document.addEventListener('mousedown', function(event) {
+    const modal = document.getElementById('retry-modal');
+    if (modal.style.display === 'flex') {
+        const modalContent = modal.firstElementChild;
+        if (event.target === modal) {
+            closeRetryModal();
+        }
+    }
+});
+
+document.getElementById('check-openq-btn')?.addEventListener('click', async function() {
+    const answers = {};
+    {% for oq in open_questions %}
+        answers["{{ oq['id'] }}"] = document.querySelector('[name="answer_{{ oq["id"] }}"]').value;
+    {% endfor %}
+    const response = await fetch("{{ url_for('check_open_questions') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            homework_id: {{ homework['id'] }},
+            student_id: {{ student_id }},
+            answers: answers
+        })
+    });
+    const data = await response.json();
+    // Feedback pro Frage anzeigen und Sample Solution einblenden
+    {% for oq in open_questions %}
+        document.getElementById('feedback_{{ oq["id"] }}').innerHTML = data.feedback["{{ oq['id'] }}"].result;
+        document.getElementById('sample_solution_{{ oq["id"] }}').style.display = 'block';
+    {% endfor %}
+    // Gesamtfeedback anzeigen
+    // Gesamtfeedback anzeigen
+document.getElementById('openq-feedback-summary').innerHTML = "<b>Feedback:</b><br>" + data.summary +
+    "<br><b>Recommendation:</b> " + data.recommendation;
+
+// Punkte und Bonuspunkte berechnen (analog zu MC)
+let basePoints = data.correct_count * 4;
+let bonusText = "";
+fetch('/get_daily_bonus?student_id={{ student_id }}')
+    .then(resp => resp.json())
+    .then(bonusData => {
+        let bonusLeft = bonusData.bonus_left ?? 0;
+        let doublePoints = Math.min(basePoints, bonusLeft);
+        let normalPoints = basePoints - doublePoints;
+        let totalPoints = doublePoints * 2 + normalPoints;
+        if (doublePoints > 0) {
+            bonusText = `<br><b>Points:</b> ${basePoints} <span style="color:#4ad991;font-weight:bold;">×2 Daily Bonus</span> = <b>${totalPoints}</b>`;
+        } else {
+            bonusText = `<br><b>Points:</b> <b>${basePoints}</b>`;
+        }
+        showSuccessModal(
+            {
+                message: "Open Questions checked!",
+                class_skill_level: data.class_skill_level,
+                overall_skill_level: data.overall_skill_level
+            },
+            { correctCount: data.correct_count },
+            bonusText
+        );
+    })
+    .catch(() => {
+        showSuccessModal(
+            {
+                message: "Open Questions checked!",
+                class_skill_level: data.class_skill_level,
+                overall_skill_level: null
+            },
+            { correctCount: data.correct_count },
+            `<br><b>Points:</b> <b>${basePoints}</b>`
+        );
+    });
+});
+    // Modal close on outside click
+    document.addEventListener('mousedown', function(event) {
+        const modal = document.getElementById('help-modal');
+        if (modal && modal.style.display === 'flex' && event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
     </script>
 </body>
 </html>

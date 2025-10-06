@@ -16,8 +16,63 @@
     <ul class="info-list">
         <li>Email: {{ student_info['email'] }}</li>
         <li>Skill Level (Class): {{ student_info['class_skill_level'] }}</li>
-        <li> Average Correct Answers per Homework: {{ mean_correct }}</li>
+        <li> Average Correct Answers per Homework in percent: {{ average_correct_percent }} % </li>
     </ul>
+
+    {% if show_homework_list_for_teacher %}
+        <div style="max-width: 700px; margin: 24px auto 0 auto;">
+            <div style="background: #fff3cd; border: 1.5px solid #ffeeba; border-radius: 10px; padding: 18px 24px; color: #856404; font-size: 1.13em;">
+                <strong>Attention:</strong> This student is <b>at risk</b> because their skill level is between 1 and 3 and they have completed less than 50% of the available assignments.
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+    <!-- Help Popup -->
+    <div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:540px; max-height:80vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">
+                Explanation<br>Student Details
+            </h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+                <div style="font-weight:bold; margin-top:12px;">General Information</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>This page shows detailed information about the selected student.</li>
+                    <li>You can see the student's email, current class skill level, and their average percentage of correct answers per homework.</li>
+                    <li>If the student is at risk (skill level 1–3 and less than 50% of assignments completed), a warning is shown at the top.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Progress Over Time</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>The charts display the student's progress for correct answers (%) and skill level over time, based on completed homework assignments.</li>
+                    <li>Hover over the points in the charts to see details for each homework.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Homework and Team Challenges</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Lists all homework and team challenges assigned to this student in the class.</li>
+                    <li>Green [Done] means the student has completed the assignment, orange [Open] means it is still open.</li>
+                    <li>Click on a homework or challenge to view the student's answers and results in detail.</li>
+                    <li>
+                        <b>Note:</b> This section is only visible if the student is considered "at risk".<br>
+                        <span style="color:#666; font-size:0.97em;">
+                            This is to support independent learning and to ensure students do not feel monitored. The information is only shown if a student is not learning effectively, so it can be used in a conversation to help the student.
+                        </span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
 
     <h3>Progress Over Time</h3>
     <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
@@ -31,135 +86,191 @@
         </div>
     </div>
 
-     <!-- JavaScript for Charts -->
-    <script>
-        // Progress: Correct Answers
-        const ctx = document.getElementById('progressChart').getContext('2d');
-        const data = {
-            labels: {{ dates | tojson }},
-            datasets: [
-                {
-                    label: 'Correct Answers',
-                    data: {{ correct_counts | tojson }},
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.2,
-                    pointRadius: 5,
-                    pointHoverRadius: 7
-                }
-            ]
-        };
+    {% if show_homework_list_for_teacher %}
+        <div style="display: flex; gap: 40px; justify-content: center; align-items: flex-start;">
+            <!-- Team Challenges -->
+            <div style="flex:1; min-width:300px;">
+                <h3>Team Challenges (completed/open by this student)</h3>
+                <ul class="class-list">
+                    {% for tc in team_challenges %}
+                        <li>
+                            {% if tc.status == 'Done' %}
+                                <a href="/homework/{{ tc.id }}/{{ student_info.id }}?teacher_view=1">
+                                    {{ tc.title }} (Created on: {{ tc.date_created[:10] }})
+                                </a>
+                                <span style="color: green; font-weight: bold;">[Done]</span>
+                            {% else %}
+                                <span style="color: #888;">{{ tc.title }} (Created on: {{ tc.date_created[:10] }})</span>
+                                <span style="color: orange; font-weight: bold;">[Open]</span>
+                            {% endif %}
+                        </li>
+                    {% else %}
+                        <li style="color:#888;">No team challenges for this class.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <!-- Homework -->
+            <div style="flex:1; min-width:300px;">
+                <h3>Homework (completed/open by this student)</h3>
+                <ul class="class-list">
+                    {% for homework in homework_list %}
+                        <li>
+                            {% if homework.status == 'Done' %}
+                                <a href="/homework/{{ homework.id }}/{{ student_info.id }}?teacher_view=1">
+                                    {{ homework.title }} (Created on: {{ homework.date_created[:10] }})
+                                </a>
+                                <span style="color: green; font-weight: bold;">[Done]</span>
+                            {% else %}
+                                <span style="color: #888;">{{ homework.title }} (Created on: {{ homework.date_created[:10] }})</span>
+                                <span style="color: orange; font-weight: bold;">[Open]</span>
+                            {% endif %}
+                        </li>
+                    {% else %}
+                        <li style="color:#888;">No homework for this class.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+{% endif %}
 
-        const config = {
-            type: 'line',
-            data: data,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            font: { size: 14 }
-                        }
-                    },
-                    title: {
-                        display: true,
-                        text: 'Correct Answers Over Time',
-                        font: { size: 20 }
-                    },
-                    tooltip: {  // Tooltip for Correct Answers
-                        callbacks: {
-                            title: function(tooltipItems) {
-                                const index = tooltipItems[0].dataIndex;
-                                return {{ titles | tojson }}[index]; // Display homework titles
-                            },
-                            label: function(tooltipItem) {
-                                return `Correct Answers: ${tooltipItem.raw}`; // Display correct answers
-                            }
-                        }
+    <!-- JavaScript for Charts -->
+<script>
+    // Progress: Correct Answers in %
+    const ctx = document.getElementById('progressChart').getContext('2d');
+    const data = {
+        labels: {{ dates | tojson }},
+        datasets: [
+            {
+                label: 'Correct Answers (%)',
+                data: {{ percent_corrects | tojson }},
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }
+        ]
+    };
+
+    const config = {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        font: { size: 14 }
                     }
                 },
-                scales: {
-                    x: { 
-                        title: { display: true, text: 'Date' } 
-                    },
-                    y: { 
-                        title: { display: true, text: 'Correct Answers' }, 
-                        min: 0, 
-                        max: 10, 
-                        ticks: { stepSize: 1 } 
+                title: {
+                    display: true,
+                    text: 'Correct Answers Over Time (%)',
+                    font: { size: 20 }
+                },
+                tooltip: {  // Tooltip for Correct Answers
+                    callbacks: {
+                        title: function(tooltipItems) {
+                            const index = tooltipItems[0].dataIndex;
+                            return {{ titles | tojson }}[index]; // Display homework titles
+                        },
+                        label: function(tooltipItem) {
+                            return `Correct Answers: ${tooltipItem.raw}%`; // Display correct answers in %
+                        }
                     }
                 }
-            }
-        };
-        new Chart(ctx, config);
-
-        // Progress: Skill Level
-        const skillCtx = document.getElementById('skillChart').getContext('2d');
-        const skillData = {
-            labels: {{ skill_dates | tojson }},
-            datasets: [
-                {
-                    label: 'Skill Level',
-                    data: {{ skill_levels | tojson }},
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.2,
-                    pointRadius: 5,
-                    pointHoverRadius: 7
+            },
+            scales: {
+                x: { 
+                    title: { display: true, text: 'Date' } 
+                },
+                y: { 
+                    title: { display: true, text: 'Correct Answers (%)' }, 
+                    min: 0, 
+                    max: 100, 
+                    ticks: { stepSize: 10 } 
                 }
-            ]
-        };
+            }
+        }
+    };
+    new Chart(ctx, config);
 
-        const skillConfig = {
-            type: 'line',
-            data: skillData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            font: { size: 14 }
-                        }
-                    },
-                    title: {
-                        display: true,
-                        text: 'Class Skill Level Over Time',
-                        font: { size: 20 }
-                    },
-                    tooltip: {  // Tooltip for Skill Level
-                        callbacks: {
-                            title: function(tooltipItems) {
-                                const index = tooltipItems[0].dataIndex;
-                                return {{ titles | tojson }}[index]; // Display homework titles
-                            },
-                            label: function(tooltipItem) {
-                                return `Skill Level: ${tooltipItem.raw}`; // Display skill level
-                            }
-                        }
+    // Progress: Skill Level (inkl. Open Questions)
+    const skillCtx = document.getElementById('skillChart').getContext('2d');
+    const skillData = {
+        labels: {{ skill_dates | tojson }},
+        datasets: [
+            {
+                label: 'Skill Level',
+                data: {{ skill_levels | tojson }},
+                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }
+        ]
+    };
+
+    const skillConfig = {
+        type: 'line',
+        data: skillData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        font: { size: 14 }
                     }
                 },
-                scales: {
-                    x: { 
-                        title: { display: true, text: 'Date' } 
-                    },
-                    y: { 
-                        title: { display: true, text: 'Skill Level' }, 
-                        min: 1, 
-                        max: 10, 
-                        ticks: { stepSize: 1 } 
+                title: {
+                    display: true,
+                    text: 'Class Skill Level Over Time',
+                    font: { size: 20 }
+                },
+                tooltip: {  // Tooltip for Skill Level
+                    callbacks: {
+                        title: function(tooltipItems) {
+                            const index = tooltipItems[0].dataIndex;
+                            return {{ titles | tojson }}[index]; // Display homework titles
+                        },
+                        label: function(tooltipItem) {
+                            return `Skill Level: ${tooltipItem.raw}`; // Display skill level
+                        }
                     }
                 }
+            },
+            scales: {
+                x: { 
+                    title: { display: true, text: 'Date' } 
+                },
+                y: { 
+                    title: { display: true, text: 'Skill Level' }, 
+                    min: 1, 
+                    max: 10, 
+                    ticks: { stepSize: 1 } 
+                }
             }
-        };
-        new Chart(skillCtx, skillConfig);
-    </script>
+        }
+    };
+    new Chart(skillCtx, skillConfig);
+
+    // Modal close on outside click
+    document.addEventListener('mousedown', function(event) {
+        const modal = document.getElementById('help-modal');
+        if (modal && modal.style.display === 'flex' && event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+</script>
 </body>
 </html>

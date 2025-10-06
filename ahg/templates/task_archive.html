@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Task Archive</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+    <!-- Help Popup -->
+    <div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:520px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">Explanation<br>Task Archive</h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+                <div style="font-weight:bold; margin-top:12px;">Filtering Tasks</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>You can filter the list of homework assignments by subject, grade level, type, or title using the filter bar above the table.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Viewing Details</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>For more information about a homework assignment, simply click on the corresponding row in the table to open its details.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="top-buttons-fixed">
+        <a href="{{ url_for('teacher_dashboard') }}" class="button">Back to Dashboard</a>
+    </div>
+    <div class="archive-container">
+        <h1 class="archive-title">Task Archive</h1>
+        <!-- Filter- und Suchleiste -->
+        <div class="filter-bar">
+            <div>
+                <label for="subject-filter">Subject:</label>
+                <select id="subject-filter">
+                    <option value="">All</option>
+                    {% for subj in tasks|map(attribute='subject')|unique|list %}
+                        <option value="{{ subj }}">{{ subj }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="grade-filter">Grade Level:</label>
+                <select id="grade-filter">
+                    <option value="">All</option>
+                    {% for grade in tasks|map(attribute='grade_level')|unique|list %}
+                        <option value="{{ grade }}">{{ grade }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="type-filter">Type:</label>
+                <select id="type-filter">
+                    <option value="">All</option>
+                    {% for t in tasks|map(attribute='ha_type')|unique|list %}
+                        <option value="{{ t }}">{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="flex:1;">
+                <label for="title-search">Title:</label>
+                <input type="text" id="title-search" placeholder="Search title..." style="width:100%;">
+            </div>
+        </div>
+        <table class="archive-table" id="archive-table">
+            <tr>
+                <th>Title</th>
+                <th>Date Created</th>
+                <th>Subject</th>
+                <th>Grade Level</th>
+                <th>Type</th>
+                <th>Teacher</th>
+            </tr>
+            {% for task in tasks %}
+           <tr class="clickable-row" data-href="{{ url_for('edit_homework', class_id=task['class_id'], teacher_id=task['teacher_id'], homework_id=task['id']) }}?from_archive=1">
+                <td>{{ task['title'] }}</td>
+                <td>{{ task['date_created'][:10] }}</td>
+                <td>{{ task['subject'] }}</td>
+                <td>{{ task['grade_level'] }}</td>
+                <td>{{ task['ha_type'] }}</td>
+                <td>{{ task['teacher_name'] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <script>
+
+    document.querySelectorAll('.clickable-row').forEach(row => {
+        row.style.cursor = "pointer";
+        row.addEventListener('click', function() {
+            window.location = this.dataset.href;
+        });
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const subjectFilter = document.getElementById('subject-filter');
+        const gradeFilter = document.getElementById('grade-filter');
+        const typeFilter = document.getElementById('type-filter');
+        const titleSearch = document.getElementById('title-search');
+        const table = document.getElementById('archive-table');
+        const rows = Array.from(table.getElementsByTagName('tr')).slice(1); // skip header
+
+        function filterTable() {
+            const subject = subjectFilter.value.toLowerCase();
+            const grade = gradeFilter.value.toLowerCase();
+            const type = typeFilter.value.toLowerCase();
+            const title = titleSearch.value.toLowerCase();
+
+            rows.forEach(row => {
+                const cells = row.getElementsByTagName('td');
+                if (cells.length < 6) return; // skip header or empty
+                const [titleCell, dateCell, subjectCell, gradeCell, typeCell, teacherCell] = cells;
+                const match =
+                    (subject === "" || subjectCell.textContent.toLowerCase() === subject) &&
+                    (grade === "" || gradeCell.textContent.toLowerCase() === grade) &&
+                    (type === "" || typeCell.textContent.toLowerCase() === type) &&
+                    (title === "" || titleCell.textContent.toLowerCase().includes(title));
+                row.style.display = match ? "" : "none";
+            });
+        }
+
+        subjectFilter.addEventListener('change', filterTable);
+        gradeFilter.addEventListener('change', filterTable);
+        typeFilter.addEventListener('change', filterTable);
+        titleSearch.addEventListener('input', filterTable);
+    });
+
+    document.addEventListener('mousedown', function(event) {
+        const modal = document.getElementById('help-modal');
+        if (modal && modal.style.display === 'flex' && event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+    </script>
+</body>
+</html>

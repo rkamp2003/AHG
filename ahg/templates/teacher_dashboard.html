@@ -9,6 +9,10 @@
     <div class="top-buttons">
         <a href="/" class="button">Log Out</a>
     </div>
+
+    <div style="position: absolute; top: 24px; right: 32px;">
+        <a href="{{ url_for('task_archive') }}" class="button">Task Archive</a>
+    </div>
     
     <h1>Welcome, {{ teacher['name'] }}</h1>
     <h2>Your Classes:</h2>
@@ -21,6 +25,43 @@
             </li>
         {% endfor %}
     </ul>
+
+    <!-- Help Button: fixed right center -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+    <!-- Help Popup -->
+    <div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:520px; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">Explanation <br> Teacher Dashboard</h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+                <div style="font-weight:bold; margin-top:12px;">Your Classes</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Shows all classes you are currently supervising.</li>
+                    <li>You can click on a class to open its detail view.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Create Class</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Use the <b>Create Class</b> button to add a new class.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Task Archive</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        By clicking the <b>Task Archive</b> button, you can access a collection of all assignments created by teachers.
+                        You can use these tasks for inspiration or assign them directly to your own classes.
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
 
     <div id="teacher-options" style="text-align: center;">
         <button onclick="showCreateClass()">Create Class</button>
@@ -47,6 +88,12 @@
         function showCreateClass() {
             document.getElementById('create-class').style.display = 'block';
         }
+        document.addEventListener('mousedown', function(event) {
+            const modal = document.getElementById('help-modal');
+            if (modal && modal.style.display === 'flex' && event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>

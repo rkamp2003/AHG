@@ -19,33 +19,176 @@
     <h2>Subject: {{ class_info['subject'] }}</h2>
     <h3>Teacher: {{ class_info['teacher_name'] }}</h3>
 
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+    <div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:520px; max-height:80vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">Explanation <br> Class Details</h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+                <div style="font-weight:bold; margin-top:12px;">Students in this Class</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Shows the class skill level for each student.</li>
+                    <li>Students have a skill level from 1 (lowest) to 10 (highest). Based on this, they receive tasks tailored to their abilities.</li>
+                    <li>A checkmark means everything is fine. An exclamation mark (!) means the student has completed less than 50% of the tasks and has a skill level of 3 or below.</li>
+                    <li>Click on a student to get detailed insights about their progress and performance.</li>
+                    <li>
+                    <b>Note:</b> The student's skill level will increase or decrease depending on how many questions they answer correctly or incorrectly when working on assignments.
+                </li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Create Learning Content</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Lets you create new tasks for the class.</li>
+                    <li>More detailed explanations are available in that view.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Homework Assignments</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        <b>Normal Homework:</b> These are individual assignments for students. "Draft" means only visible to teachers, "Published" means visible and editable for students. Click on a homework to see more details and the assignment itself.
+                    </li>
+                    <li>
+                        <b>Team Challenges:</b> These are collaborative assignments where the whole class works towards a common goal. This shared objective is designed to motivate students to work together.
+                    </li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Class Progress & Overview Charts</div>
+                <ul style="margin-left:22px;">
+                    <li>
+                        The overview charts at the bottom show the average percentage of correct answers per homework and the average skill level of the class after each homework.
+                    </li>
+                    <li>
+                        Use these charts to quickly get an overview of your class's progress and identify trends or areas that may need attention.
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Explanation Popup for Create Learning Content -->
+    <div id="content-explain-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:5000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:540px; max-height:80vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('content-explain-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">Explanation<br>Create Learning Content</h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+                <div style="font-weight:bold; margin-top:12px;">Title & Description</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>
+                        <b>Title:</b> Give your assignment a clear and concise name.
+                    </li>
+                    <li>
+                        <b>Description:</b> This field is sent to an AI that generates the tasks for you. The description should only specify the topic or general subject area for the tasks (e.g., "Photosynthesis in plants" or "Linear equations").<br>
+                        The format and number of questions are already fixed: <b>30 multiple choice questions (10 per skill level Group)</b> or <b>18 open questions (6 per skill level Group)</b>.
+                    </li>
+                    <li>
+                        You can also import text from a PDF to the description field using the "Import Context from PDF" button.
+                    </li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Content Types</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li><b>Multiple Choice:</b> Students answer questions by selecting one of several options. You define the correct answer (index 0 = first option, 1 = second, etc.).</li>
+                    <li><b>Open Question:</b> Students write their own answers. You provide a sample solution, which is used by the AI to automatically check and evaluate student answers.</li>
+                    <li><b>Team Challenge:</b> If selected, the assignment becomes a collaborative challenge for the whole class. The class works together towards a common goal (goal score). This is designed to motivate students and foster teamwork.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">AI Evaluation</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>For open questions, the AI compares student answers to your sample solution and decides if the answer is correct or not.</li>
+                    <li>For multiple choice, the system automatically checks if the selected answer matches the correct index.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Skill Levels</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Questions are assigned to students based on their skill level (1–10). This ensures that each student receives tasks appropriate for their abilities.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">General Workflow</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Fill in the title and description to give context to your assignment.</li>
+                    <li>Choose the content type and fill in the required fields.</li>
+                    <li>For team challenges, set a start/end time and a goal score.</li>
+                    <li>Click "Create" to add the assignment to your class.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
     <h3>Students in this Class:</h3>
     <ul class="student-list">
         {% for student in students %}
-        <li>
-            <a href="/student_details/{{ student['id'] }}/{{ class_info['id'] }}/{{ teacher_id }}">
-                {{ student['name'] }} (Skill Level (Class): {{ student['class_skill_level'] }})
-            </a>
+        <li style="display:flex;align-items:center;justify-content:space-between;">
+            <span>
+                <a href="/student_details/{{ student['id'] }}/{{ class_info['id'] }}/{{ teacher_id }}">
+                    {{ student['name'] }} (Class Skill Level: {{ student['class_skill_level'] }})
+                </a>
+            </span>
+            <span style="display:flex;align-items:center;gap:8px;">
+                {# Warnsymbol, wenn Skill Level 1-3 und weniger als 25% erledigt #}
+                {% set total_tasks = total_homework_per_student[student['id']] if total_homework_per_student and student['id'] in total_homework_per_student else 0 %}
+                {% set completed_tasks = completed_homework_per_student[student['id']] if completed_homework_per_student and student['id'] in completed_homework_per_student else 0 %}
+                {% set percent = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0 %}
+                {% if student['class_skill_level'] <= 3 and percent < 50 %}
+                    <span title="Student at risk: Low skill level and low participation" style="color:red;font-size:1.5em;margin-left:8px;">&#10071;</span>
+                {% else %}
+                <span title="Student is on track" style="color:green;font-size:1.5em;margin-left:8px;">&#10003;</span>
+                {% endif %}
+            </span>
         </li>
         {% endfor %}
     </ul>
 
-    <h3>Homework:</h3>
-    <ul class="class-list">
-        {% for homework in homework_list %}
-            <li>
-                <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
-                    {{ homework['title'] }} (Created on: {{ homework['date_created'] }})
-                </a>
-                - <strong>Status:</strong>
-                {% if homework['status'] == 'published' %}
-                    <span style="color: green;">Published</span>
+    <div style="display: flex; gap: 32px; justify-content: center; margin-top: 32px;">
+        <!-- Team Challenges -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Team Challenges:</h3>
+            <ul class="class-list">
+                {% for tc in team_challenges %}
+                    <li>
+                        <a href="{{ url_for('view_homework_teacher', homework_id=tc.id, class_id=class_info['id'], teacher_id=teacher_id) }}">
+                            {{ tc.title }} (Created on: {{ tc.date_created }})
+                        </a>
+                        - <strong>Status:</strong>
+                        {% if tc.status == 'published' %}
+                            <span style="color: green;">Published</span>
+                        {% else %}
+                            <span style="color: orange;">Draft</span>
+                        {% endif %}
+                        <br>
+                        <b>Goal:</b> {{ tc.goal_score }} | <b>Current:</b> {{ tc.current_score }}
+                    </li>
                 {% else %}
-                    <span style="color: orange;">Draft</span>
-                {% endif %}
-            </li>
-        {% endfor %}
-    </ul>
+                    <li style="color:#888;">No Teamchallanges Created so far.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Normale Hausaufgaben -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Homework:</h3>
+            <ul class="class-list">
+                {% for homework in homework_list %}
+                    <li>
+                        <a href="{{ url_for('view_homework_teacher', homework_id=homework['id'], class_id=class_info['id'], teacher_id=teacher_id) }}">
+                            {{ homework['title'] }} (Created on: {{ homework['date_created'] }})
+                        </a>
+                        - <strong>Status:</strong>
+                        {% if homework['status'] == 'published' %}
+                            <span style="color: green;">Published</span>
+                        {% else %}
+                            <span style="color: orange;">Draft</span>
+                        {% endif %}
+                    </li>
+                {% else %}
+                    <li style="color:#888;">Keine normalen Hausaufgaben für diese Klasse.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
 
     <h3>Class Progress</h3>
     <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
@@ -59,27 +202,78 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- Form for New Homework -->
-    <h3>Create New Homework</h3>
-    <p>In "Description," add the general topic of the homework.</p>
-    <form action="/create_homework" method="post">
-        <input type="hidden" name="class_id" value="{{ class_info['id'] }}">
-        <input type="hidden" name="teacher_id" value="{{ teacher_id }}">
-        <label for="title">Title:</label>
-        <input type="text" id="title" name="title" required>
-        <label for="description">Description:</label>
-        <textarea id="description" name="description" required></textarea>
-        <button type="submit">Create Homework</button>
-    </form>
+    <div class="create-content-fixed">
+        <button class="button" onclick="openContentModal()">Create Learning Content</button>
+    </div>
+
+<div id="content-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:4000;">
+    <div style="background:#fff; padding:28px 28px 20px 28px; border-radius:14px; max-width:440px; width:100%; max-height:85vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+        <!-- Überschrift und Fragezeichen-Button rechts, Überschrift weiter nach rechts -->
+<div style="width:100%; display:flex; align-items:center; margin-bottom:18px;">
+    <div style="width:75px;"></div> <!-- Abstand nach links -->
+    <h3 style="margin:0 auto; font-size:1.5em; text-align:center; flex:0 1 100%;">Create Learning Content</h3>
+    <button type="button"
+        onclick="document.getElementById('content-explain-modal').style.display='flex';"
+        style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px; margin-left:12px;">
+        <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Explain"
+            style="width:38px; height:38px; display:block;">
+    </button>
+</div>
+        <!-- ...restlicher Modal-Inhalt... -->
+        <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">Content Type:</label>
+        <select id="content-type" onchange="toggleContentFields()" style="margin-bottom:18px; width:80%; padding:6px; border-radius:6px; text-align:center; font-size:1em;">
+        <option value="mc">Multiple Choice</option>
+        <option value="open">Open Question</option>
+        </select>
+        <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Title:</label>
+        <input type="text" id="content-title" style="margin-bottom:10px; width:90%; padding:6px; border-radius:6px; text-align:center;">
+        <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Description:</label>
+        <textarea id="description" name="description" required style="width:100%; min-height:80px; border-radius:6px; padding:6px; margin-bottom:10px; text-align:left;"></textarea>
+        <button type="button" onclick="document.getElementById('pdf-upload-modal').style.display='block';" style="height:40px; margin-bottom:14px;">Import Context from PDF</button>
+        <!-- PDF-Upload-Modal -->
+        <div id="pdf-upload-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:400px; margin:10% auto;">
+            <span class="close" onclick="document.getElementById('pdf-upload-modal').style.display='none';" style="float:right;cursor:pointer;">&times;</span>
+            <h3>Import text from PDF</h3>
+            <form id="pdf-upload-form" enctype="multipart/form-data">
+            <input type="file" name="pdf" accept="application/pdf" required>
+            <button type="submit">Extract Text</button>
+            </form>
+        </div>
+        </div>
+        <!-- Team Challenge Auswahl -->
+        <label style="margin-bottom:6px; font-weight:500; text-align:center; width:100%;">
+        <input type="checkbox" id="is-team-challenge" onchange="toggleTeamChallengeFields(this.checked)">
+        Team Challenge
+        </label>
+        <div id="team-challenge-fields" style="display:none; width:100%; flex-direction:column; align-items:center; margin-bottom:10px;">
+        <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Start Time:
+            <input type="datetime-local" id="team-start-time" style="margin-bottom:6px; width:90%; padding:6px; border-radius:6px;">
+        </label>
+        <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">End Time:
+            <input type="datetime-local" id="team-end-time" style="margin-bottom:6px; width:90%; padding:6px; border-radius:6px;">
+        </label>
+        <label style="margin-bottom:4px; font-weight:500; text-align:center; width:100%;">Goal Score:
+            <input type="number" id="team-goal-score" min="1" style="margin-bottom:6px; width:90%; padding:6px; border-radius:6px;">
+        </label>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:10px; width:100%; justify-content:center;">
+        <button type="button" onclick="submitContent()" class="button" style="min-width:100px;">Create</button>
+        <button onclick="closeContentModal()" class="button" style="min-width:100px;">Cancel</button>
+        <button type="button" onclick="showContentPrompt()" class="button" style="min-width:120px;">Show Full Prompt</button>
+        </div>
+        <pre id="content-full-prompt" style="display:none; background:#f6f6f6; padding:12px; margin-top:14px; max-width:100%; max-height:300px; overflow-x:auto; overflow-y:auto; border-radius:8px; font-size:0.97em;"></pre>
+    </div>
+    </div>
 
     <script>
-        // Average Correct Answers Chart
+        // Average Correct Answers in %
         const correctCtx = document.getElementById('classProgressChart').getContext('2d');
         const correctData = {
             labels: {{ dates | tojson }},
             datasets: [{
-                label: 'Avg Correct Answers',
-                data: {{ avg_correct_counts | tojson }},
+                label: 'Avg Correct Answers (%)',
+                data: {{ avg_percent_corrects | tojson }},
                 borderColor: 'rgba(75, 192, 192, 1)',
                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
                 borderWidth: 2,
@@ -99,7 +293,7 @@
                     legend: { position: 'top' },
                     title: {
                         display: true,
-                        text: 'Avg Correct Answers per Homework',
+                        text: 'Avg Correct Answers per Homework (%)',
                         font: { size: 20 }
                     },
                     tooltip: {
@@ -109,7 +303,7 @@
                                 return {{ titles | tojson }}[index];
                             },
                             label: function(tooltipItem) {
-                                return `Avg Correct Answers: ${tooltipItem.raw}`;
+                                return `Avg Correct Answers: ${tooltipItem.raw}%`;
                             }
                         }
                     }
@@ -120,15 +314,16 @@
                     },
                     y: { 
                         min: 0, 
-                        max: 10, 
-                        stepSize: 1, 
-                        title: { display: true, text: 'Avg Correct Answers' } 
+                        max: 100, 
+                        stepSize: 10, 
+                        title: { display: true, text: 'Avg Correct Answers (%)' } 
                     }
                 }
             }
         };
         new Chart(correctCtx, correctConfig);
 
+        // Average Skill Level
         const skillCtx = document.getElementById('classSkillChart').getContext('2d');
         const skillData = {
             labels: {{ dates | tojson }},
@@ -184,6 +379,179 @@
         };
         new Chart(skillCtx, skillConfig);
 
+        function pad(n) { return n < 10 ? '0' + n : n; }
+        function getLocalDateTimeString(date) {
+            return date.getFullYear() + '-' +
+                pad(date.getMonth() + 1) + '-' +
+                pad(date.getDate()) + 'T' +
+                pad(date.getHours()) + ':' +
+                pad(date.getMinutes());
+        }
+
+        function openContentModal() {
+            document.getElementById('content-modal').style.display = 'flex';
+
+            // Team Challenge Default-Werte setzen
+            const now = new Date();
+            const in7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            document.getElementById('team-start-time').value = getLocalDateTimeString(now);
+            document.getElementById('team-end-time').value = getLocalDateTimeString(in7days);
+            document.getElementById('team-goal-score').value = 100;
+        }
+        function closeContentModal() {
+            document.getElementById('content-modal').style.display = 'none';
+        }
+        function toggleContentFields() {
+            const type = document.getElementById('content-type').value;
+            document.getElementById('mc-fields').style.display = (type === 'mc') ? 'block' : 'none';
+            document.getElementById('open-fields').style.display = (type === 'open') ? 'block' : 'none';
+            document.getElementById('essay-fields').style.display = (type === 'essay') ? 'block' : 'none';
+        }
+
+        function submitContent() {
+            const type = document.getElementById('content-type').value;
+            const title = document.getElementById('content-title').value;
+            const desc = document.getElementById('description').value;
+            let payload = {
+                type: type,
+                title: title,
+                desc: desc,
+                class_id: {{ class_info['id'] }},
+                teacher_id: {{ teacher_id }}
+            };
+
+            // Team Challenge Felder
+            const isTeam = document.getElementById('is-team-challenge').checked;
+            payload.is_team_challenge = isTeam ? 1 : 0;
+            if (isTeam) {
+                payload.start_time = document.getElementById('team-start-time').value;
+                payload.end_time = document.getElementById('team-end-time').value;
+                payload.goal_score = document.getElementById('team-goal-score').value;
+            }
+
+            // Debug-Ausgabe
+            console.log("Payload an Backend:", payload);
+
+            fetch('/create_learning_content', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            }).then(resp => resp.json()).then(data => {
+                if (data.redirect_url) {
+                    window.location.href = data.redirect_url;
+                }
+            });
+        }
+        function showContentPrompt() {
+            const type = document.getElementById('content-type').value;
+            const title = document.getElementById('content-title').value;
+            const desc = document.getElementById('description').value;
+            let prompt = '';
+            if (type === 'mc') {
+                prompt = `
+Create homework for the subject {{ class_info['subject'] }} in the grade {{ class_info['grade_level'] }}:
+For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
+
+Homework title: ${title}
+Homework description: ${desc}
+
+Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering Understanding Applying Analysing Evaluating Creating.
+1st level of difficulty (skill_level 1) 3 * Remembering, 3 * Understanding, 3 * Applying, 1 * Analysing
+2nd level of difficulty (skill_level 4) 2 * Remembering, 3 * Understanding, 3 * Applying, 2 * Analysing
+3rd level of difficulty (skill_level 8) 2 * Remembering, 2 * Understanding, 3 * Applying, 3 * Analysing
+The homework should only contain multiple-choice questions. 
+Each question should have four possible answers and the correct answer should be returned as an index (0-based).
+
+Create a total of 30 questions: 10 questions per difficulty level.
+Please answer only with JSON content in the following format:
+[
+    {"skill_level": 1, "questions": [
+        {"question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "taxonomy": "..."}
+    ]},
+    {"skill_level": 4, "questions": [
+        {"question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "explanation": "...", "taxonomy": "..."}
+    ]},
+    {"skill_level": 8, "questions": [
+        {"question": "...", "options": ["...", "...", "...", "..."], "answer": 3, "explanation": "...", "taxonomy": "..."}
+    ]}
+]
+        `;
+            } else if (type === 'open') {
+                prompt = `
+Create open-ended homework for the subject {{ class_info['subject'] }} in the grade {{ class_info['grade_level'] }}:
+For reference, students have a skill_level between 1 and 10, with 10 being the best/most difficult.
+
+Homework title: ${title}
+Homework description: ${desc}
+
+Based on Bloom's Taxonomy, the questions should be divided into the task types Remembering, Understanding, Applying, Analysing, Evaluating, Creating.
+For each of the following skill levels, generate 6 open-ended questions (one for each taxonomy type):
+- skill_level 1 (easy): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+- skill_level 4 (medium): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+- skill_level 8 (hard): Remembering, Understanding, Applying, Analysing, Evaluating, Creating
+
+For each question, also generate a sample solution (model answer) that would be considered a very good answer for a student.
+Please answer only with JSON content in the following format:
+[
+    {"skill_level": 1, "questions": [
+        {"question": "...", "sample_solution": "...", "taxonomy": "Remembering"},
+        ... (total 6 questions, one per taxonomy)
+    ]},
+    {"skill_level": 4, "questions": [
+        ... (6 questions)
+    ]},
+    {"skill_level": 8, "questions": [
+        ... (6 questions)
+    ]}
+]
+        `;
+            }
+            const pre = document.getElementById('content-full-prompt');
+            pre.innerText = prompt.trim();
+            pre.style.display = 'block';
+        }
+
+        // Modal schließen beim Klick außerhalb
+        document.addEventListener('mousedown', function(event) {
+            const modal = document.getElementById('content-modal');
+            if (modal && modal.style.display === 'flex' && event.target === modal) {
+                closeContentModal();
+            }
+        });
+
+        function toggleTeamChallengeFields(show) {
+            document.getElementById('team-challenge-fields').style.display = show ? 'block' : 'none';
+        }
+
+    document.getElementById('pdf-upload-form').onsubmit = async function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        const response = await fetch('{{ url_for("extract_pdf_text") }}', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        if (data.text) {
+            let desc = document.getElementById('description');
+            desc.value = desc.value ? desc.value + "\n\n" + data.text : data.text;
+            document.getElementById('pdf-upload-modal').style.display = 'none';
+        } else {
+            alert("Could not extract text from PDF.");
+        }
+    };
+    document.addEventListener('mousedown', function(event) {
+        const modal = document.getElementById('help-modal');
+        if (modal && modal.style.display === 'flex' && event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+        // Modal close on outside click for content-explain-modal
+    document.addEventListener('mousedown', function(event) {
+        const modal = document.getElementById('content-explain-modal');
+        if (modal && modal.style.display === 'flex' && event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
     </script>
 </body>
 </html>

@@ -15,28 +15,131 @@
     <h2>Subject: {{ class_info['subject'] }}</h2>
     <h3>Teacher: {{ class_info['teacher_name'] }}</h3>
 
-    <h3>Your Information:</h3>
-    <ul class="info-list">
-        <li>Name: {{ student['name'] }}</li>
-        <li>Email: {{ student['email'] }}</li>
-        <li>Skill Level (Class): {{ student['class_skill_level'] }}</li>
-    </ul>
+    <!-- Class Members und Your Information nebeneinander -->
+    <div style="display: flex; gap: 32px; justify-content: center; margin: 32px auto 0 auto; max-width: 900px;">
+        <!-- Your Information (links) -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Your Information</h3>
+            <ul class="info-list">
+                <li>Name: {{ student['name'] }}</li>
+                <li>Email: {{ student['email'] }}</li>
+                <li>Class Skill Level: {{ student['class_skill_level'] }}</li>
+                <li>
+                    {% set percent = (completed_homework / total_homework * 100) if total_homework > 0 else 0 %}
+                    <span style="font-weight:bold; cursor:pointer;"
+                        title="Click for more info"
+                        onclick="document.getElementById('at-risk-modal').style.display='flex';">
+                        Status:
+                        {% if student['class_skill_level'] <= 3 and percent < 50 %}
+                            <span style="color:red;">&#10071; At Risk</span>
+                        {% else %}
+                            <span style="color:green;">&#10003; On Track</span>
+                        {% endif %}
+                    </span>
+                </li>
+            </ul>
+        </div>
+        <!-- Class Members (rechts) -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Class Members</h3>
+            <ul class="info-list">
+                {% for s in students %}
+                    <li style="display:flex;align-items:center;justify-content:space-between;">
+                        <span>
+                            {{ s.name }}
+                        </span>
+                        <span style="display:flex;gap:8px;">
+                            {% for badge in student_fav_badges[s.id] %}
+                                <img src="{{ url_for('static', filename=badge.icon_url.split('static/', 1)[-1]) }}" alt="{{ badge.name }}" title="{{ badge.name }}" style="height:32px;width:32px;object-fit:contain;border-radius:8px;">
+                            {% endfor %}
+                            {% for i in range(3 - student_fav_badges[s.id]|length) %}
+                                <span style="height:32px;width:32px;background:#eee;border-radius:8px;display:inline-block;"></span>
+                            {% endfor %}
+                        </span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
 
-    <h3>Homework</h3>
-    <ul class="class-list">
-        {% for homework in homework_list %}
-            <li>
-                <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
-                    {{ homework['title'] }} - assigned on: {{ homework['date_created'] }} - ({{ homework['status'] }})
-                </a>
-                {% if homework['status'] == "Done" %}
-                    <span class="completed">✔️</span>
+    <!-- Homework Completion Balken zentral darunter -->
+    <div style="max-width: 600px; margin: 32px auto 24px auto; padding: 18px 24px; background: #f7f7ff; border-radius: 12px; box-shadow: 0 2px 8px rgba(80,80,160,0.07);">
+        <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:1.05em; margin-bottom:2px;">
+            Task Completion
+        </div>
+        <div style="display: flex; background: linear-gradient(90deg, #4fc3f7, #1976d2); border-radius: 8px; overflow: hidden; height: 22px; box-shadow: 0 1px 2px #ccc; margin-bottom: 6px;">
+            {% for i in range(total_homework) %}
+                <div style="
+                    flex: 1;
+                    background: {% if i < completed_homework %}transparent{% else %}#d3d3d3{% endif %};
+                    height: 100%;
+                    border-right: {% if not loop.last %}1px solid #fff{% else %}none{% endif %};
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #fff;
+                    font-weight: bold;
+                    font-size: 0.95em;
+                ">
+                    {% if total_homework <= 10 %}{{ i+1 }}{% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        <div style="text-align:center; color:#4a4a8e; font-weight:bold; font-size:0.97em;">
+            {{ completed_homework }} of {{ total_homework }} done
+        </div>
+    </div>
+
+    <!-- Team Challenges und Homework nebeneinander -->
+    <div style="display: flex; gap: 32px; justify-content: center; margin: 32px auto 20px auto; max-width: 900px;">
+        <!-- Team Challenges -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Team Challenges</h3>
+            <ul class="class-list">
+                {% for tc in team_challenges %}
+                    <li>
+                        <a href="/homework/{{ tc.id }}/{{ student_id }}">
+                            {{ tc.title }} (Created on: {{ tc.date_created }})
+                        </a>
+                        <br>
+                        <strong>Status:</strong>
+                        {% if tc.status == 'Done' %}
+                            <span style="color: green;">Done</span>
+                        {% else %}
+                            <span style="color: orange;">Open</span>
+                        {% endif %}
+                        <br>
+                        <b>Goal:</b> {{ tc.goal_score }} | <b>Current:</b> {{ tc.current_score }}
+                    </li>
                 {% else %}
-                    <span class="pending">❌</span>
-                {% endif %}
-            </li>
-        {% endfor %}
-    </ul>
+                    <li style="color:#888;">No Team Challenges for this class.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Normale Hausaufgaben -->
+        <div style="flex:1; min-width:300px;">
+            <h3>Homework</h3>
+            <ul class="class-list">
+                {% for homework in homework_list %}
+                    <li>
+                        <a href="/homework/{{ homework['id'] }}/{{ student_id }}">
+                            {{ homework['title'] }} (Created on: {{ homework['date_created'] }})
+                        </a>
+                        <br>
+                        <strong>Status:</strong>
+                        {% if homework['status'] == "Done" %}
+                            <span style="color: green;">Done</span>
+                        {% else %}
+                            <span style="color: orange;">Open</span>
+                        {% endif %}
+                    </li>
+                {% else %}
+                    <li style="color:#888;">No homework for this class.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
 
     <h3>Progress Over Time</h3>
     <div class="chart-container" style="display: flex; gap: 20px; justify-content: center;">
@@ -57,45 +160,173 @@
         <button type="submit" class="submit-button danger">Leave Class</button>
     </form>
 
+    <!-- Help Button: fixed right center, larger, no border -->
+    <div id="help-button-fixed" style="position: fixed; top: 20%; right: 10px; transform: translateY(-50%); z-index: 1100;">
+        <button type="button"
+            onclick="document.getElementById('help-modal').style.display='flex';"
+            style="background: none; border: none; border-radius: 50%; cursor: pointer; padding: 6px;">
+            <img src="{{ url_for('static', filename='help_icon.png') }}" alt="Help"
+                style="width:54px; height:54px; display:block;">
+        </button>
+    </div>
+
+    <!-- At Risk Info Popup (zeigt je nach Status unterschiedliche Inhalte) -->
+    <div id="at-risk-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:3000;">
+        <div style="background:#fffbe9; border-radius:14px; box-shadow:0 4px 24px #fbbd08a0; padding:32px; max-width:540px; margin:auto; display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('at-risk-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#d32f2f; cursor:pointer;">&times;</span>
+            {% if student['class_skill_level'] <= 3 and percent < 50 %}
+                <h2 style="color:#d32f2f; text-align:center; margin-bottom:18px;">
+                    &#10071; You are currently at risk &#10071;
+                </h2>
+                <p style="font-size:1.1em;">
+                    <b>{{ student.name }}</b>, your skill level in this class is <b>{{ student.class_skill_level }}</b> and you have completed only <b>{{ completed_homework }}</b> out of <b>{{ total_homework }}</b> tasks ({{ percent|round(1) }}%).
+                </p>
+                <ul style="margin-left:20px; margin-bottom:18px;">
+                    <li>You are considered <b>at risk</b> if your skill level is 3 or below <u>and</u> you have completed less than 50% of all homework assignments.</li>
+                    <li>This means you might need extra support or motivation to catch up.</li>
+                </ul>
+                <div style="background:#fff3e0; border-radius:8px; padding:16px; margin-bottom:18px;">
+                    <b>What can you do?</b>
+                    <ul style="margin-left:20px;">
+                        <li>Try to complete more homework assignments to improve your participation.</li>
+                        <li>Ask your teacher for help or advice if you are struggling with the material.</li>
+                        <li>Use the retry function to practice tasks you found difficult.</li>
+                        <li>Check the feedback and recommendations after each homework to see what you should focus on next.</li>
+                    </ul>
+                </div>
+            {% else %}
+                <h2 style="color:#388e3c; text-align:center; margin-bottom:18px;">
+                    &#10003; Everything is fine!
+                </h2>
+                <p style="font-size:1.1em; text-align:center;">
+                    You are <b>on track</b> in this class.<br>
+                    <b>{{ student.name }}</b>, your skill level in this class is <b>{{ student.class_skill_level }}</b> and you have completed <b>{{ completed_homework }}</b> out of <b>{{ total_homework }}</b> tasks ({{ percent|round(1) }}%).
+                </p>
+            {% endif %}
+            <!-- AI Sidekick Hinweis: Text mittig, Bild absolut rechts -->
+            <div style="margin-top:18px; background:#e3f2fd; border-radius:8px; padding:14px 12px 10px 12px; width:100%; position:relative; min-height:120px;">
+                <div style="max-width:340px; margin:0 auto; text-align:left;">
+                    <span style="font-size:1.08em; font-style:italic;">
+                        "If you want, I can take a closer look at your learning progress and give you a detailed, personal analysis and tips for your next steps. Just click the button!"
+                    </span>
+                    <br>
+                        <a href="/ai_progress_analysis/{{ student_id }}/{{ class_info['id'] }}" class="button" style="margin-top:10px;">
+                        AI Progress Analysis
+                    </a>
+                </div>
+                <img src="{{ url_for('static', filename='ai_sidekick.png') }}" alt="AI Sidekick"
+                    style="position:absolute; top:50%; right:18px; transform:translateY(-50%); width:110px; height:110px; border-radius:50%;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Popup -->
+    <div id="help-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#fff; padding:28px 32px 22px 32px; border-radius:14px; max-width:540px; max-height:85vh; overflow-y:auto; margin:auto; box-shadow:0 8px 32px rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; position:relative;">
+            <span class="close" onclick="document.getElementById('help-modal').style.display='none';"
+                style="position:absolute; right:18px; top:12px; font-size:2em; color:#888; cursor:pointer;">&times;</span>
+            <h2 style="margin-top:0; margin-bottom:16px; text-align:center;">
+                Explanation<br>Class Details
+            </h2>
+            <div style="font-size:1.08em; color:#333; text-align:left;">
+                <div style="font-weight:bold; margin-top:12px;">Your Information</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Shows your name, email, and your current skill level for this class.</li>
+                    <li>Your class skill level determines which tasks you receive. The higher your skill level, the more challenging your tasks will be.</li>
+                    <li>Your skill level increases when you answer questions correctly and can decrease if you answer many incorrectly.</li>
+                    <li>
+                        There is a status shown for you in this class. Click on the status to get more information and a detailed AI analysis of your learning progress.
+                    </li>
+                    <li>
+                        <b>Privacy:</b> Your teacher normally only sees what percentage of questions you answered correctly in each homework, but not which exact questions you got wrong or what your answers were.
+                        <br>
+                        <b>Exception:</b> If you are <b>at risk</b> (skill level 3 or below and less than 50% of homework completed), your teacher can see exactly which questions you got wrong and what you answered. This helps your teacher to give you targeted support and help you improve.
+                    </li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Class Members</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Lists all students in this class.</li>
+                    <li>Next to each name, you see their favorite badges (up to 3), which show their achievements.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Task Completion</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>The bar shows how many homework assignments you have completed out of the total assigned in this class.</li>
+                    <li>Each segment represents one homework. Completed segments are colored, unfinished ones are gray.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Team Challenges</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Team Challenges are collaborative assignments where the whole class works together towards a common goal.</li>
+                    <li>You see the goal score and the current score. When the goal is reached, the challenge is completed for everyone who participated in the challange.</li>
+                    <li>Status shows whether the challenge is still open or already done.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Homework</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>Lists all individual homework assignments for this class.</li>
+                    <li>Status shows whether you have completed the homework ("Done") or if it is still open.</li>
+                    <li>Click on a homework or team challenge to view and work on the assignment.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Progress Over Time</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>The left chart shows your percentage of correct answers for each homework over time.</li>
+                    <li>The right chart shows how your skill level in this class has changed over time.</li>
+                    <li>Hover over the points in the charts to see details for each homework.</li>
+                </ul>
+                <div style="font-weight:bold; margin-top:12px;">Leave Class</div>
+                <ul style="margin-left:22px; margin-bottom:10px;">
+                    <li>You can leave the class at any time by clicking the "Leave Class" button at the bottom of the page.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript for Charts -->
     <script>
-        // Correct Answers
-        const correctCtx = document.getElementById('progressChart').getContext('2d');
-        const correctData = {
+        // Progress: Correct Answers in %
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        const data = {
             labels: {{ dates | tojson }},
-            datasets: [{
-                label: 'Correct Answers',
-                data: {{ correct_counts | tojson }},
-                borderColor: 'rgba(75, 192, 192, 1)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.2,
-                pointRadius: 5,
-                pointHoverRadius: 7
-            }]
+            datasets: [
+                {
+                    label: 'Correct Answers (%)',
+                    data: {{ percent_corrects | tojson }},
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
         };
 
-        const correctConfig = {
+        const config = {
             type: 'line',
-            data: correctData,
+            data: data,
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { position: 'top' },
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
                     title: {
                         display: true,
-                        text: 'Correct Answers Over Time',
+                        text: 'Correct Answers Over Time (%)',
                         font: { size: 20 }
                     },
-                    tooltip: {
+                    tooltip: {  // Tooltip for Correct Answers
                         callbacks: {
                             title: function(tooltipItems) {
                                 const index = tooltipItems[0].dataIndex;
-                                return {{ titles | tojson }}[index];
+                                return {{ titles | tojson }}[index]; // Display homework titles
                             },
                             label: function(tooltipItem) {
-                                return `Correct Answers: ${tooltipItem.raw}`;
+                                return `Correct Answers: ${tooltipItem.raw}%`; // Display correct answers in %
                             }
                         }
                     }
@@ -105,31 +336,33 @@
                         title: { display: true, text: 'Date' } 
                     },
                     y: { 
+                        title: { display: true, text: 'Correct Answers (%)' }, 
                         min: 0, 
-                        max: 10, 
-                        stepSize: 1, 
-                        title: { display: true, text: 'Correct Answers' } 
+                        max: 100, 
+                        ticks: { stepSize: 10 } 
                     }
                 }
             }
         };
-        new Chart(correctCtx, correctConfig);
+        new Chart(ctx, config);
 
-        // Skill Level
+        // Progress: Skill Level (inkl. Open Questions)
         const skillCtx = document.getElementById('skillChart').getContext('2d');
         const skillData = {
             labels: {{ dates | tojson }},
-            datasets: [{
-                label: 'Class Skill Level',
-                data: {{ skill_levels | tojson }},
-                borderColor: 'rgba(54, 162, 235, 1)',
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.2,
-                pointRadius: 5,
-                pointHoverRadius: 7
-            }]
+            datasets: [
+                {
+                    label: 'Skill Level',
+                    data: {{ skill_levels | tojson }},
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }
+            ]
         };
 
         const skillConfig = {
@@ -139,20 +372,25 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { position: 'top' },
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
                     title: {
                         display: true,
                         text: 'Class Skill Level Over Time',
                         font: { size: 20 }
                     },
-                    tooltip: {
+                    tooltip: {  // Tooltip for Skill Level
                         callbacks: {
                             title: function(tooltipItems) {
                                 const index = tooltipItems[0].dataIndex;
-                                return {{ titles | tojson }}[index];
+                                return {{ titles | tojson }}[index]; // Display homework titles
                             },
                             label: function(tooltipItem) {
-                                return `Class Skill Level: ${tooltipItem.raw}`;
+                                return `Skill Level: ${tooltipItem.raw}`; // Display skill level
                             }
                         }
                     }
@@ -162,15 +400,30 @@
                         title: { display: true, text: 'Date' } 
                     },
                     y: { 
+                        title: { display: true, text: 'Skill Level' }, 
                         min: 1, 
                         max: 10, 
-                        stepSize: 1, 
-                        title: { display: true, text: 'Class Skill Level' } 
+                        ticks: { stepSize: 1 } 
                     }
                 }
             }
         };
         new Chart(skillCtx, skillConfig);
+
+        // Modal close on outside click
+        document.addEventListener('mousedown', function(event) {
+            const modal = document.getElementById('help-modal');
+            if (modal && modal.style.display === 'flex' && event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('mousedown', function(event) {
+            const modal = document.getElementById('at-risk-modal');
+            if (modal && modal.style.display === 'flex' && event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>
